@@ -1,0 +1,81 @@
+====================================================================
+สรุป Stored Procedure: dbo.usp_mc0104_get_invoice_for_offset_calcbasic
+====================================================================
+Database   : RPA_DEV
+ผู้เขียน    : Kannika T.
+สร้างเมื่อ   : 07 Jul 2025
+สรุปเมื่อ    : 2026-09-09
+
+--------------------------------------------------------------------
+1. หน้าที่
+--------------------------------------------------------------------
+ขั้นตอนที่ 1 ของชุด offset (ถูกเรียกจาก usp_mc0104_get_invoice_for_offset)
+เตรียมข้อมูลตั้งต้น 2 ชุดจากตาราง dbo.trx_mc_raw_match_and_clear:
+  - รายการอ้างอิงการชำระ (payment reference) แตกออกทีละ ref
+  - รายการ invoice พร้อมยอดสะสม (accumulated) สำหรับใช้ตัดชำระภายหลัง
+
+หมายเหตุ: ไม่มีการ CREATE temp table ในตัวเอง -> ใช้ #tblPayRef และ
+#tblInvoiceDt ที่ proc แม่ (usp_mc0104_get_invoice_for_offset) สร้างไว้แล้ว
+
+--------------------------------------------------------------------
+2. Parameters
+--------------------------------------------------------------------
+@process_key      nvarchar(40)   คีย์ของรอบประมวลผล
+@account          nvarchar(200)  บัญชี
+@bank_running_no  nvarchar(10)   เลขที่รายการเดินบัญชีธนาคาร
+@sap_doc_or_no    nvarchar(30)   เลขเอกสาร SAP / OR
+@update_by        nvarchar(30)   ผู้ทำรายการ (รับเข้ามาแต่ไม่ได้ใช้ใน proc นี้)
+
+--------------------------------------------------------------------
+3. การทำงาน
+--------------------------------------------------------------------
+STEP 1  INSERT -> #tblPayRef  ("Calculate invoice with Ref")
+  - ดึงจาก trx_mc_raw_match_and_clear ตามเงื่อนไข:
+        process_key = @process_key
+        account = @account
+        bank_running_no = @bank_running_no
+        sap_doc_or_no = @sap_doc_or_no
+        UPPER(ISNULL(payment_block,'')) <> 'A'   (ตัดรายการที่ถูก block)
+  - amount: replace ',' เป็น '.' แล้ว cast เป็น decimal(18,2)
+  - GROUP BY ทุกคอลัมน์ที่เลือก เพื่อ dedupe
+  - CROSS APPLY STRING_SPLIT(ref_2, ',') -> แตก ref_2 ที่คั่นด้วย comma
+    ออกเป็นหลายแถว (คอลัมน์ผลลัพธ์ ref_2 = ค่าที่แยกได้)
+
+STEP 2  INSERT -> #tblInvoiceDt  ("Calculate invoice without Ref")
+  - ดึงจาก trx_mc_raw_match_and_clear ตามเงื่อนไข:
+        process_key = @process_key
+        account = @account
+        bank_running_no = @bank_running_no
+        RIGHT(thb_gross,1) <> '-'          (เฉพาะยอด thb_gross ที่ไม่ติดลบ)
+        sap_doc_or_no <> document_no        (ตัดตัวเอกสาร SAP/OR ออก)
+        UPPER(ISNULL(payment_block,'')) <> 'A'
+  - thb_gross: replace ',' ออก (ลบ thousand separator)
+  - accum_thb_gross (คอลัมน์ accum_invoice_amt): ยอดสะสมแบบ running total
+        SUM(thb_gross) OVER (
+            ORDER BY
+              CASE WHEN ref_2 = document_no THEN 0 ELSE 9 END,   -- แถวที่ ref ตรง invoice มาก่อน
+              CONVERT(date, net_due_date, 104) ASC,              -- แล้วเรียงตาม due date
+              CAST(thb_gross AS decimal) ASC
+            ROWS UNBOUNDED PRECEDING)
+    ใช้เป็นฐานสำหรับจับคู่ยอดเงินรับกับ invoice ทีละใบในขั้นตอนถัดไป
+
+STEP 3  บล็อก DEBUG (ถูก comment ไว้) - ไว้ select ดู #tblPayRef / #tblInvoiceDt
+
+--------------------------------------------------------------------
+4. Input / Output
+--------------------------------------------------------------------
+อ่านจาก   : dbo.trx_mc_raw_match_and_clear
+เขียนลง   : #tblPayRef, #tblInvoiceDt  (temp table ของ session ที่ proc แม่สร้าง)
+ไม่มี      : result set ที่ return กลับ (ทำงานผ่าน temp table ล้วน ๆ)
+
+--------------------------------------------------------------------
+5. ข้อสังเกต
+--------------------------------------------------------------------
+  - พึ่งพา temp table จาก caller โดยตรง -> รันเดี่ยว ๆ ไม่ได้
+    ต้องเรียกผ่าน usp_mc0104_get_invoice_for_offset เท่านั้น
+  - net_due_date / document_date / posting_date เก็บเป็น nvarchar และแปลงด้วย
+    format 104 (dd.mm.yyyy) เวลาคำนวณ
+  - amount / thb_gross เก็บเป็น string ที่มี ',' -> ต้อง clean ก่อน cast ทุกครั้ง
+  - STEP 1 และ STEP 2 กรอง payment_block = 'A' ออกทั้งคู่
+  - @update_by ไม่ถูกใช้งานใน proc นี้
+====================================================================
