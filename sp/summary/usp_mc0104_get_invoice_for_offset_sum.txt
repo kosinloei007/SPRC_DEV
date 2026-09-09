@@ -1,0 +1,252 @@
+====================================================================
+สรุป Stored Procedure: dbo.usp_mc0104_get_invoice_for_offset
+(รวม sub-procedure ทุกตัว)
+====================================================================
+Database : RPA_DEV
+สรุปเมื่อ  : 2026-09-09
+
+--------------------------------------------------------------------
+0. ภาพรวม
+--------------------------------------------------------------------
+ชุด procedure สำหรับ "ดึง invoice มาหักกลบ (offset) กับยอดเงินรับจากธนาคาร"
+รับยอดเงินที่ชำระเข้ามา 1 รายการ แล้วเลือก invoice หลายใบมาตัดยอดตามลำดับ
+ความสำคัญ (อ้างอิงตรงกับ invoice ก่อน -> วันครบกำหนด -> จำนวนเงิน) จนกว่า
+เงินจะหมด สุดท้ายบันทึกผลลง dbo.trn_mc_detail และคืน result set ให้ผู้เรียก
+
+โครงสร้างการเรียก (call tree)
+  usp_mc0104_get_invoice_for_offset                 [orchestrator]
+    |-- usp_mc0104_get_invoice_for_offset_calcbasic
+    |-- usp_mc0104_get_invoice_for_offset_calcinvoice
+    |     |-- usp_mc0104_get_invoice_for_offset_calcinvoice_with_ref2
+    |     |-- usp_mc0104_get_invoice_for_offset_calcinvoice_without_ref2
+    |-- usp_mc0104_get_invoice_for_offset_import
+    |-- usp_mc0104_get_invoice_for_offset_final
+
+Parameter ชุดเดียวกันถูกส่งต่อทุก proc
+  @process_key      nvarchar(40)   คีย์ของรอบประมวลผล
+  @account          nvarchar(200)  บัญชี (ใช้เป็น ref_1 ในตารางถาวร)
+  @bank_running_no  nvarchar(10)   เลขที่รายการเดินบัญชีธนาคาร
+  @sap_doc_or_no    nvarchar(30)   เลขเอกสาร SAP / OR
+  @update_by        nvarchar(30)   ผู้ทำรายการ (ใช้จริงเฉพาะ _import)
+
+Temp table (สร้างโดย orchestrator, สืบทอดให้ sub-proc ทุกตัวใช้ร่วมกัน)
+  #tblPayRef        รายการอ้างอิงการชำระ (payment reference) แตกทีละ ref
+  #tblInvoiceDt     รายการ invoice ตั้งต้น + ยอดสะสม
+  #tblResult        invoice ที่ถูกเลือกมา offset แล้ว (ผลลัพธ์หลัก)
+  #tblInvoiceCalcDt สร้างภายใน _with_ref2 / _without_ref2 ด้วย SELECT INTO
+                    (พื้นที่คำนวณ loop)
+
+ตารางถาวรที่เกี่ยวข้อง
+  dbo.trx_mc_raw_match_and_clear   แหล่งข้อมูลดิบ (input)
+  dbo.trn_mc_detail                ปลายทางบันทึกผล (output)
+
+resitem_flag : 1 = มี residual item (เงินเหลือหลัง offset) , 0 = ไม่มี
+
+
+====================================================================
+1. usp_mc0104_get_invoice_for_offset   [orchestrator]
+====================================================================
+ผู้เขียน : Nittaya N.  |  สร้าง : 03 Jan 2025
+
+หน้าที่
+  ควบคุมลำดับการทำงาน ไม่คำนวณเอง
+
+ขั้นตอน
+  1) DROP temp table ค้าง (#tblPayRef, #tblInvoiceDt, #tblResult,
+     #tblTrans, #tblInvoiceCalcDt)
+  2) CREATE #tblPayRef, #tblInvoiceDt, #tblResult
+  3) BEGIN TRY
+        EXEC ..._calcbasic
+        EXEC ..._calcinvoice
+        EXEC ..._import
+        EXEC ..._final
+        DROP temp table ทั้งหมด
+     END TRY
+     BEGIN CATCH
+        DROP temp table ทั้งหมด
+        SELECT 0 AS resitem_flag, 0 AS sap_doc_or_no
+        เก็บ ERROR_MESSAGE()/SEVERITY/STATE แล้ว PRINT ข้อความ error
+        (บรรทัด RAISERROR ถูก comment ไว้ -> ไม่ re-throw error กลับผู้เรียก)
+     END CATCH
+
+ข้อสังเกต
+  - #tblPayRef / #tblInvoiceDt / #tblResult ไม่ใช่ dead code : sub-proc
+    ที่ถูกเรียกต่อ (nested) มองเห็นและใช้ temp table เหล่านี้ร่วมกัน
+  - error ที่เกิดใน sub-proc จะถูกกลืน ผู้เรียกรู้ได้จาก result set
+    ที่ resitem_flag = 0 เท่านั้น
+
+
+====================================================================
+2. usp_mc0104_get_invoice_for_offset_calcbasic
+====================================================================
+ผู้เขียน : Kannika T.  |  สร้าง : 07 Jul 2025
+
+หน้าที่ : เตรียมข้อมูลตั้งต้นจาก trx_mc_raw_match_and_clear ลง temp table
+
+STEP 1  INSERT -> #tblPayRef  ("with Ref")
+  - filter : process_key/account/bank_running_no/sap_doc_or_no ตรง param
+             และ UPPER(ISNULL(payment_block,'')) <> 'A'
+  - amount : replace ',' -> '.' แล้ว cast decimal(18,2)
+  - GROUP BY ทุกคอลัมน์เพื่อ dedupe
+  - CROSS APPLY STRING_SPLIT(ISNULL(ref_2,''), ',') -> แตก ref_2 ที่คั่นด้วย
+    comma ออกเป็นหลายแถว
+
+STEP 2  INSERT -> #tblInvoiceDt  ("without Ref")
+  - filter : process_key/account/bank_running_no ตรง param
+             RIGHT(thb_gross,1) <> '-'      (เฉพาะยอดไม่ติดลบ)
+             sap_doc_or_no <> document_no   (ตัดตัวเอกสาร SAP/OR)
+             payment_block <> 'A'
+  - thb_gross : replace ',' ออก
+  - accum_thb_gross : running SUM(thb_gross) OVER(
+        ORDER BY CASE WHEN ref_2 = document_no THEN 0 ELSE 9 END,
+                 CONVERT(date,net_due_date,104) ASC,
+                 CAST(thb_gross AS decimal) ASC
+        ROWS UNBOUNDED PRECEDING)
+
+Output : เขียน #tblPayRef, #tblInvoiceDt ; ไม่มี result set
+
+
+====================================================================
+3. usp_mc0104_get_invoice_for_offset_calcinvoice   [router]
+====================================================================
+ผู้เขียน : Kannika T.  |  สร้าง : 30 Jul 2025
+
+หน้าที่ : เลือกวิธีคำนวณ offset ตามว่ามี reference หรือไม่
+
+  IF EXISTS (SELECT * FROM #tblPayRef WHERE REF_2 IS NOT NULL AND REF_2 <> '')
+      EXEC ..._calcinvoice_with_ref2
+  ELSE
+      EXEC ..._calcinvoice_without_ref2
+
+
+====================================================================
+3a. usp_mc0104_get_invoice_for_offset_calcinvoice_with_ref2
+====================================================================
+ผู้เขียน : Kannika T.  |  สร้าง : 30 Jul 2025
+
+หน้าที่ : คำนวณ offset โดยให้ invoice ที่ตรงกับ reference มาก่อน
+
+STEP 1  เตรียมตัวแปร + ตาราง @tblRef2
+  - @tblRef2 = STRING_SPLIT ของ (SELECT TOP 1 ref_2 FROM #tblInvoiceDt
+    GROUP BY ref_2) คั่นด้วย ',' -> รายการเลขที่ invoice ที่อ้างอิงมา
+
+STEP 2  SELECT INTO #tblInvoiceCalcDt  จาก #tblInvoiceDt
+  - เงื่อนไข : amount - thb_gross >= 0
+              CONVERT(date,net_due_date,104) <= วันนี้   (ครบกำหนดแล้ว)
+  - diff_amt  = amount - thb_gross
+  - IndexSeq / Seq = ROW_NUMBER() OVER(ORDER BY
+        CASE WHEN document_no IN (@tblRef2) THEN 0 ELSE 9 END,  -- ตรง ref ก่อน
+        CONVERT(date,net_due_date,104),
+        (amount - thb_gross))
+  - is_offset = 0 , is_remain = 0
+
+STEP 3  WHILE loop (greedy offset) วนไม่เกินจำนวนแถว
+  3.1  หา TOP 1 by Seq ที่ is_offset = 0
+       -> @IndexSeq, @RemainAmt = diff_amt, @IsRemain = (diff_amt > 0)
+  3.2  ถ้าไม่เจอ -> BREAK
+  3.3  UPDATE แถวนั้น : is_offset = 1, is_remain = @IsRemain
+  3.4  Recalc แถวที่ยัง is_offset = 0 :
+         diff_amt ใหม่ = @RemainAmt - thb_gross  (คงไว้เฉพาะที่ >= 0)
+         Seq ใหม่ = ROW_NUMBER ตาม (ref match, net_due_date, remain-thb_gross)
+  -> เป็นการไล่หักยอดเงินที่เหลือทีละ invoice
+
+STEP 4  INSERT -> #tblResult  (เฉพาะแถว is_offset = 1)
+  - accum_thb_gross = running SUM(thb_gross) OVER(ORDER BY IndexSeq)
+  - remainning = diff_amt
+  - resitem_flag = CASE WHEN MIN(diff_amt) OVER(PARTITION BY
+                        process_key,account,pay_date,bank_running_no) > 0
+                   THEN 1 ELSE 0 END
+
+
+====================================================================
+3b. usp_mc0104_get_invoice_for_offset_calcinvoice_without_ref2
+====================================================================
+ผู้เขียน : Kannika T.  |  สร้าง : 30 Jul 2025
+
+หน้าที่ : เหมือน 3a แต่ไม่มี reference -> จัดลำดับด้วยวันครบกำหนดล้วน
+
+ต่างจาก _with_ref2 ตรง :
+  - ไม่มี @tblRef2
+  - IndexSeq / Seq = ROW_NUMBER() OVER(ORDER BY
+        CONVERT(date,net_due_date,104), (amount - thb_gross))
+    (ไม่มีเงื่อนไข ref match นำหน้า)
+  - STEP 3 loop และ STEP 4 insert -> #tblResult เหมือนกันทุกอย่าง
+
+
+====================================================================
+4. usp_mc0104_get_invoice_for_offset_import
+====================================================================
+ผู้เขียน : Kannika T.  |  สร้าง : 30 Jul 2025
+
+หน้าที่ : บันทึกผลลัพธ์ลงตารางถาวร dbo.trn_mc_detail
+
+STEP 1  ถ้ามีข้อมูลเดิม (process_key + ref_1 = @account + bank_running_no)
+        -> DELETE ทิ้งก่อน (กันซ้ำ / re-run ได้)
+
+STEP 2  INSERT INTO dbo.trn_mc_detail
+  ส่วน A : ทุกแถวจาก #tblResult (invoice list ที่ offset)
+           -> document_no, amount, net_due_date, thb_gross,
+              accum_thb_gross, remaining_amt = remainning, resitem_flag
+  UNION
+  ส่วน B : ทุกแถวจาก #tblPayRef (บรรทัด SAP Doc#OR)
+           -> document_no = sap_doc_or_no , คอลัมน์ตัวเลข/แฟล็ก = NULL
+  ทั้งสองส่วน : create_date = GETDATE() , create_by = @update_by
+
+
+====================================================================
+5. usp_mc0104_get_invoice_for_offset_final
+====================================================================
+ผู้เขียน : Kannika T.  |  สร้าง : 30 Jul 2025
+
+หน้าที่ : คืน result set ให้ผู้เรียก (RPA / หน้าจอ mc0104)
+
+RESULT SET 1  รายการ invoice สำหรับ offset
+  SELECT document_no FROM trn_mc_detail
+  WHERE process_key = @process_key
+    AND ref_1 = @account
+    AND bank_running_no = @bank_running_no
+
+RESULT SET 2  สถานะ residual item + SAP Doc#OR
+  IF EXISTS (SELECT * FROM #tblResult)
+      SELECT DISTINCT resitem_flag,
+             (SELECT DISTINCT sap_doc_or_no FROM #tblPayRef) AS sap_doc_or_no
+      FROM #tblResult
+  ELSE
+      SELECT 0 AS resitem_flag, 0 AS sap_doc_or_no
+
+
+====================================================================
+6. ลำดับการไหลของข้อมูล (data flow)
+====================================================================
+  trx_mc_raw_match_and_clear
+        |  (calcbasic)
+        v
+  #tblPayRef  +  #tblInvoiceDt
+        |  (calcinvoice -> with_ref2 / without_ref2 : loop offset)
+        v
+  #tblInvoiceCalcDt  --(is_offset = 1)-->  #tblResult
+        |  (import)
+        v
+  dbo.trn_mc_detail   (ลบของเดิม + insert #tblResult UNION #tblPayRef)
+        |  (final)
+        v
+  RESULT SET 1 : document_no list
+  RESULT SET 2 : resitem_flag , sap_doc_or_no
+
+
+====================================================================
+7. ข้อสังเกต / จุดเสี่ยง
+====================================================================
+  - sub-proc ทุกตัวพึ่งพา temp table จาก orchestrator -> รันเดี่ยวไม่ได้
+  - วันที่ (net_due_date ฯลฯ) เก็บเป็น nvarchar แปลงด้วย format 104
+    (dd.mm.yyyy) ตลอด
+  - amount / thb_gross เก็บเป็น string มี ',' -> ต้อง clean ก่อน cast ทุกที่
+  - _with_ref2 อ่าน ref list จาก #tblInvoiceDt (ไม่ใช่ #tblPayRef)
+    แต่ตัว router (calcinvoice) เช็คเงื่อนไขจาก #tblPayRef.REF_2
+  - CATCH ของ orchestrator ไม่ re-throw (RAISERROR ถูก comment)
+    -> error ถูกกลืน ผู้เรียกต้องเช็ค resitem_flag = 0 เอง
+  - _import ใช้ DELETE + INSERT ทำให้ re-run ได้ แต่ไม่มี transaction
+    ครอบ -> ถ้า fail กลางคัน ข้อมูลใน trn_mc_detail อาจไม่ครบ
+  - loop offset เป็น WHILE ทีละแถว : ถ้า #tblInvoiceCalcDt มีแถวมาก
+    ประสิทธิภาพจะลดลง
+====================================================================
