@@ -3,7 +3,7 @@
 ## Database
 
 This project connects to a SQL Server database. For connection details and
-instructions, see [database_connect.md](./database_connect.md).
+instructions, see [.claude/docs/database_connect.md](./.claude/docs/database_connect.md).
 
 ## Stored procedure workflow
 
@@ -32,4 +32,4 @@ stacked migrations. When a new requirement arrives, edit `_u.md` so its
 | `/run-sp <spec.md> ...` | generic runner — execute any spec file(s) in order, stop on first error |
 
 All runners execute against `RPA_DEV` via `sqlcmd`, reading credentials from
-`database_connect.md`.
+`.claude/docs/database_connect.md`.

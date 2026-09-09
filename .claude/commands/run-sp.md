@@ -31,8 +31,8 @@ For every token in `$ARGUMENTS`, in order:
 
 ## Connection
 
-Read connection details from `database_connect.md` (fall back to
-`.claude/docs/database_connect.md`). Do not hard-code the password. Expected:
+Read connection details from `.claude/docs/database_connect.md`. Do not
+hard-code the password. Expected:
 
 - Server: `DESKTOP-785IB33\MSSQLSERVER2017`
 - Login: `amulet_dev`
