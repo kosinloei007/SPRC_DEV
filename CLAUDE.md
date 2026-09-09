@@ -27,6 +27,7 @@ stacked migrations. When a new requirement arrives, edit `_u.md` so its
 | Command | Purpose |
 | --- | --- |
 | `/sp-new <proc_name> [topic-slug]` | scaffold `_c.md` + `_u.md` + a `/sp:<topic>` command for a new proc |
+| `/sp-update <proc_name> [requirement...]` | run a proc's `_u.md` against `RPA_DEV`; if a requirement is given, edit `_u.md` first |
 | `/sp:<topic>` | apply the latest update (`_u.md`) for that proc to `RPA_DEV` |
 | `/sp:<topic> create` | create the proc from scratch (`_c.md`) |
 | `/run-sp <spec.md> ...` | generic runner — execute any spec file(s) in order, stop on first error |
