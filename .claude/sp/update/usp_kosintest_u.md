@@ -11,7 +11,7 @@
 ## รายละเอียดการแก้ไข
 
 <ผู้ใช้แก้ส่วนนี้ทุกครั้งที่มี requirement ใหม่ — อธิบายสิ่งที่เปลี่ยน>
-ให้ SELECT 'kosin' as test2 ออกมา
+ให้ SELECT 'kosin' as test3 ออกมา
 
 ## Script
 
@@ -27,7 +27,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    SELECT 'kosin' AS test2;
+    SELECT 'kosin' AS test3;
 END
 GO
 ```
