@@ -1,6 +1,6 @@
 ---
 description: Run the SQL in one or more SP spec .md files against RPA_DEV, in order
-argument-hint: "[spec.md ...]  (default: the usp_kosintest pair)"
+argument-hint: "<spec.md> [spec.md ...]"
 allowed-tools: Read, Glob, Bash, PowerShell
 ---
 
@@ -13,10 +13,8 @@ in the order given, stopping at the first failure.
 
 `$ARGUMENTS`
 
-If `$ARGUMENTS` is empty, run this default sequence:
-
-1. `.claude/sp/create/usp_kosintest_c.md`
-2. `.claude/sp/update/usp_kosintest_u.md`
+If `$ARGUMENTS` is empty, stop and ask which spec file(s) to run — there is no
+default sequence.
 
 ## How to resolve each file argument
 
@@ -65,6 +63,8 @@ hard-code the password. Expected:
 
 ## Verify after running
 
+For each proc touched, show its current definition:
+
 ```
-sqlcmd -S "DESKTOP-785IB33\MSSQLSERVER2017" -U amulet_dev -P "P@ssw0rd" -d RPA_DEV -y 0 -Q "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.usp_kosintest'))"
+sqlcmd -S "DESKTOP-785IB33\MSSQLSERVER2017" -U amulet_dev -P "P@ssw0rd" -d RPA_DEV -y 0 -Q "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.<proc_name>'))"
 ```
