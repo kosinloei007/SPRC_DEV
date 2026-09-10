@@ -14,12 +14,19 @@ Create a brand-new stored procedure spec set and a dedicated slash command for i
 
 1. **`proc_name`** (required) — full procedure name. Must match `^usp_[a-z0-9_]+$`.
    If missing or invalid, stop and explain the expected format.
+   Then **drop a trailing `_YYYYMMDD` date segment** (a literal `_` followed by
+   exactly 8 digits) if present. The trimmed name is what gets used as the
+   procedure name and in every spec file name below.
+   Example: `usp_cfg_get_file_info_20290909` → `usp_cfg_get_file_info`.
 2. **`topic-slug`** (optional) — the name of the generated slash command.
-   Default: take `proc_name`, drop the leading `usp_`, drop a trailing
-   `_YYYYMMDD` date segment if present, then replace `_` with `-`.
-   Example: `usp_cfg_get_file_info_20290909` → `cfg-get-file-info`.
+   Default: take the trimmed `proc_name`, drop the leading `usp_`, then
+   replace `_` with `-`.
+   Example: `usp_cfg_get_file_info` → `cfg-get-file-info`.
 
 ## Steps
+
+In every step below, `<proc_name>` means the **trimmed** name from Argument 1
+(with any trailing `_YYYYMMDD` removed).
 
 1. **Refuse if it already exists.** If `.claude/sp/create/<proc_name>_c.md` or
    `.claude/commands/sp/<topic-slug>.md` exists, stop and report — never overwrite.
