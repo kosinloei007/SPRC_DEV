@@ -1,6 +1,6 @@
 ---
 description: Run the SQL in one or more SP spec .md files against RPA_DEV, in order
-argument-hint: "[spec.md ...]  (default: the usp_cfg_get_file_info_20290909 pair)"
+argument-hint: "[spec.md ...]  (default: the usp_kosintest pair)"
 allowed-tools: Read, Glob, Bash, PowerShell
 ---
 
@@ -15,8 +15,8 @@ in the order given, stopping at the first failure.
 
 If `$ARGUMENTS` is empty, run this default sequence:
 
-1. `.claude/sp/create/usp_cfg_get_file_info_20290909_c.md`
-2. `.claude/sp/update/usp_cfg_get_file_info_20290909_u.md`
+1. `.claude/sp/create/usp_kosintest_c.md`
+2. `.claude/sp/update/usp_kosintest_u.md`
 
 ## How to resolve each file argument
 
@@ -66,5 +66,5 @@ hard-code the password. Expected:
 ## Verify after running
 
 ```
-sqlcmd -S "DESKTOP-785IB33\MSSQLSERVER2017" -U amulet_dev -P "P@ssw0rd" -d RPA_DEV -y 0 -Q "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.usp_cfg_get_file_info_20290909'))"
+sqlcmd -S "DESKTOP-785IB33\MSSQLSERVER2017" -U amulet_dev -P "P@ssw0rd" -d RPA_DEV -y 0 -Q "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.usp_kosintest'))"
 ```
