@@ -45,15 +45,15 @@ the `RPA_DEV` database — optionally revising the spec first for a new requirem
    `.claude/commands/run-sp.md`:
    - extract the `## Script` fence + the `## ตัวอย่างการเรียกใช้` fence,
    - write them to a scratchpad `.sql` (Script, then `GO`, then the example),
-   - execute with
-     `sqlcmd -S "DESKTOP-785IB33\MSSQLSERVER2017" -U amulet_dev -P "P@ssw0rd" -d RPA_DEV -b -l 5 -i "<temp>.sql"`
+   - execute with (fill `<server>`, `<login>`, `<password>` from `.claude/docs/database_connect.md`)
+     `sqlcmd -S "<server>" -U <login> -P "<password>" -d RPA_DEV -b -l 5 -i "<temp>.sql"`
      (Bash tool; fall back to PowerShell if arg parsing misbehaves),
    - stop and report if it errors.
 
-4. **Verify** — show the current definition:
+4. **Verify** — show the current definition (fill `<server>`, `<login>`, `<password>` from `.claude/docs/database_connect.md`):
 
    ```
-   sqlcmd -S "DESKTOP-785IB33\MSSQLSERVER2017" -U amulet_dev -P "P@ssw0rd" -d RPA_DEV -y 0 -Q "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.<proc_name>'))"
+   sqlcmd -S "<server>" -U <login> -P "<password>" -d RPA_DEV -y 0 -Q "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.<proc_name>'))"
    ```
 
 ## Rules

@@ -34,8 +34,8 @@ For every token in `$ARGUMENTS`, in order:
 Read connection details from `.claude/docs/database_connect.md`. Do not
 hard-code the password. Expected:
 
-- Server: `DESKTOP-785IB33\MSSQLSERVER2017`
-- Login: `amulet_dev`
+- Server: `<server>`
+- Login: `<login>`
 - Database: `RPA_DEV`
 
 ## Steps — for each resolved file, in order
@@ -50,7 +50,7 @@ hard-code the password. Expected:
 5. Execute (batch-abort on error):
 
    ```
-   sqlcmd -S "DESKTOP-785IB33\MSSQLSERVER2017" -U amulet_dev -P "P@ssw0rd" -d RPA_DEV -b -l 5 -i "<temp>.sql"
+   sqlcmd -S "<server>" -U <login> -P "<password>" -d RPA_DEV -b -l 5 -i "<temp>.sql"
    ```
 
    Run it with the Bash tool. If argument parsing misbehaves, retry the exact
@@ -66,5 +66,5 @@ hard-code the password. Expected:
 ## Verify after running
 
 ```
-sqlcmd -S "DESKTOP-785IB33\MSSQLSERVER2017" -U amulet_dev -P "P@ssw0rd" -d RPA_DEV -y 0 -Q "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.usp_kosintest'))"
+sqlcmd -S "<server>" -U <login> -P "<password>" -d RPA_DEV -y 0 -Q "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.usp_kosintest'))"
 ```

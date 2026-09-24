@@ -177,9 +177,9 @@ the execution procedure defined in `.claude/commands/run-sp.md` (extract the
 
 ## After running
 
-Show the current definition:
+Show the current definition (fill `<server>`, `<login>`, `<password>` from `.claude/docs/database_connect.md`):
 
 ```
-sqlcmd -S "DESKTOP-785IB33\MSSQLSERVER2017" -U amulet_dev -P "P@ssw0rd" -d RPA_DEV -y 0 -Q "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.<proc_name>'))"
+sqlcmd -S "<server>" -U <login> -P "<password>" -d RPA_DEV -y 0 -Q "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.<proc_name>'))"
 ```
 ````
