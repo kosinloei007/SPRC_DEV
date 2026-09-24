@@ -21,6 +21,8 @@
 `match_clear_status_cd` แปลงค่าก่อนคืน: `1` → `'Y'`, `0` → `'N'`, `NULL` → `'N'`
 (ค่าอื่นที่ไม่ใช่ `1` → `'N'`)
 
+เรียงผลลัพธ์ตาม `cust_cd`
+
 ## Script
 
 ```sql
@@ -51,7 +53,8 @@ BEGIN
         [match_clear_by]
     FROM dbo.trn_mc_othercustomer_report
     WHERE process_key  = @process_key
-      AND process_code = @process_code;
+      AND process_code = @process_code
+    ORDER BY [cust_cd];
 END
 GO
 ```
