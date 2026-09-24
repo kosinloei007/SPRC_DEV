@@ -12,7 +12,9 @@ Create a brand-new stored procedure spec set and a dedicated slash command for i
 
 `$ARGUMENTS` = `<proc_name> [topic-slug]`
 
-1. **`proc_name`** (required) — full procedure name. Must match `^usp_[a-z0-9_]+$`.
+1. **`proc_name`** (required) — full procedure name. Must match `^usp_[A-Za-z0-9_]+$`
+   (case-insensitive). **Keep the name exactly as typed — never change its
+   letter case.** Example: `usp_MC0302_get_data` stays `usp_MC0302_get_data`.
    If missing or invalid, stop and explain the expected format.
    Then **drop a trailing `_YYYYMMDD` date segment** (a literal `_` followed by
    exactly 8 digits) if present. The trimmed name is what gets used as the
@@ -20,8 +22,9 @@ Create a brand-new stored procedure spec set and a dedicated slash command for i
    Example: `usp_cfg_get_file_info_20290909` → `usp_cfg_get_file_info`.
 2. **`topic-slug`** (optional) — the name of the generated slash command.
    Default: take the trimmed `proc_name`, drop the leading `usp_`, then
-   replace `_` with `-`.
-   Example: `usp_cfg_get_file_info` → `cfg-get-file-info`.
+   replace `_` with `-` (letter case is kept as-is).
+   Example: `usp_cfg_get_file_info` → `cfg-get-file-info`,
+   `usp_MC0302_get_data` → `MC0302-get-data`.
 
 ## Steps
 
@@ -48,6 +51,9 @@ In every step below, `<proc_name>` means the **trimmed** name from Argument 1
 
 5. **Create `.claude/commands/sp/<topic-slug>.md`** — use the per-topic command
    template below, with `<proc_name>` and the two spec paths baked in.
+   Replace every `<ARGS>` placeholder with the literal text: a dollar sign
+   followed by `ARGUMENTS` (no space). The placeholder exists so this command's
+   own arguments are not substituted into the generated file.
 
 6. **Report**: list the 3 files created, state the new command name
    `/sp:<topic-slug>`, and give a one-line usage reminder:
@@ -166,8 +172,8 @@ the execution procedure defined in `.claude/commands/run-sp.md` (extract the
 
 ## Which file to run
 
-- `$ARGUMENTS` = `create` → run the **create spec** (`_c.md`).
-- `$ARGUMENTS` = `run` or empty → run the **update spec** (`_u.md`).
+- `<ARGS>` = `create` → run the **create spec** (`_c.md`).
+- `<ARGS>` = `run` or empty → run the **update spec** (`_u.md`).
 
 ## After running
 

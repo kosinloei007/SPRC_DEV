@@ -6,7 +6,8 @@
 | สรุปเมื่อ | 2026-09-23 |
 | ผู้เขียน | Nittaya N. |
 | สร้าง | 29 Dec 2024 |
-| create_date / modify_date ใน DB | 09 Sep 2026 11:57:35 (เท่ากัน — ยังไม่เคยแก้หลัง deploy ครั้งนี้) |
+| create_date ใน DB | 09 Sep 2026 11:57:35 |
+| modify_date ล่าสุดใน DB | 23 Sep 2026 11:43:51 (เพิ่มคอลัมน์ `ref_2`, `sap_doc_or_no` ใน STEP 4) |
 
 ## ภาพรวม
 
@@ -81,12 +82,14 @@ ORDER BY ref_1
 
 **STEP 4 — คืนผลลัพธ์**
 ```sql
-SELECT ref_1, bank_cd, bank_running_no,
+SELECT ref_1, ref_2, sap_doc_or_no, bank_cd, bank_running_no,
        CONVERT(nvarchar(8), pay_date, 112) AS payment_date
 FROM trn_mc_header
 WHERE process_key = @process_key
 ORDER BY ref_1
 ```
+(แก้ 23 Sep 2026: เพิ่ม `ref_2` และ `sap_doc_or_no` ต่อจาก `ref_1` — ทั้งสอง
+คอลัมน์มีอยู่แล้วใน `trn_mc_header` จาก STEP 3)
 
 **TRY/CATCH**: ถ้า error → `ROLLBACK` (ถ้ามี transaction เปิดอยู่) แล้ว
 `RAISERROR` re-throw กลับผู้เรียกด้วย severity/state เดิม
