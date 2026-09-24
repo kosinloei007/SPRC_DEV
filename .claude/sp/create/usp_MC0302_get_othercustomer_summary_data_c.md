@@ -10,7 +10,8 @@
 
 ## Requirement (initial)
 
-ดึงข้อมูลสรุปของลูกค้าอื่น (other customer) ตาม `@process_key` / `@process_code` — ยังไม่ได้ระบุรายละเอียด (placeholder)
+ดึงข้อมูลสรุปจาก `dbo.trn_mc_othercustomer_report` โดยกรองด้วย
+`process_key = @process_key` และ `process_code = @process_code`
 
 ## Script
 
@@ -30,8 +31,23 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- initial implementation
-    SELECT 1;
+    SELECT
+        [calculate_date],
+        [cust_cd],
+        [cust_name],
+        [offset_total_credit_amt],
+        [offset_total_debit_amt],
+        [offset_diff_amt],
+        [notoffset_total_credit_amt],
+        [notoffset_total_debit_amt],
+        [notoffset_diff_amt],
+        [match_clear_sap_doc_no],
+        [match_clear_status_cd],
+        [match_clear_date],
+        [match_clear_by]
+    FROM dbo.trn_mc_othercustomer_report
+    WHERE process_key  = @process_key
+      AND process_code = @process_code;
 END
 GO
 ```
