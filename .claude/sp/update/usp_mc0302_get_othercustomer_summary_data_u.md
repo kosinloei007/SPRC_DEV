@@ -18,6 +18,9 @@
 `notoffset_total_credit_amt`, `notoffset_total_debit_amt`, `notoffset_diff_amt`,
 `match_clear_sap_doc_no`, `match_clear_status_cd`, `match_clear_date`, `match_clear_by`
 
+`match_clear_status_cd` แปลงค่าก่อนคืน: `1` → `'Y'`, `0` → `'N'`, `NULL` → `'N'`
+(ค่าอื่นที่ไม่ใช่ `1` → `'N'`)
+
 ## Script
 
 ```sql
@@ -43,7 +46,7 @@ BEGIN
         [notoffset_total_debit_amt],
         [notoffset_diff_amt],
         [match_clear_sap_doc_no],
-        [match_clear_status_cd],
+        CASE WHEN [match_clear_status_cd] = 1 THEN 'Y' ELSE 'N' END AS [match_clear_status_cd],
         [match_clear_date],
         [match_clear_by]
     FROM dbo.trn_mc_othercustomer_report
