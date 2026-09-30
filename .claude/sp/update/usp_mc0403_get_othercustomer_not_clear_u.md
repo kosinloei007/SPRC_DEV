@@ -23,8 +23,11 @@
   (schema เดียวกับ `dbo.trn_mc_othercustomer_summary`)
 - STEP 1: call `usp_mc0403_get_raw_fbl5n` — ตัว stored นั้นเป็นคน insert ลง
   `#tbl_trx_mc_raw_fbl5n` เอง (ไม่ใช้ `INSERT INTO ... EXEC` ใน orchestrator แล้ว)
-- STEP 2: call `usp_mc0403_insert_othercustomer_summary` ต่อจาก STEP 1 (ภายใน
-  transaction เดียวกัน) โดย summary ใช้ข้อมูลจาก `#tbl_trx_mc_raw_fbl5n`
+- STEP 2: call `usp_mc0403_insert_othercustomer_header` — group by
+  `process_key, process_code, account` จาก `#tbl_trx_mc_raw_fbl5n` แล้ว insert ลง
+  `#tbl_trn_mc_othercustomer_header`
+- STEP 3: call `usp_mc0403_insert_othercustomer_summary` (ภายใน transaction
+  เดียวกัน) โดย summary ใช้ข้อมูลจาก `#tbl_trx_mc_raw_fbl5n`
 
 ## Script
 
@@ -134,7 +137,13 @@ BEGIN
             @process_code = @process_code,
             @update_by    = @update_by;
 
-        -- STEP 2: summary (reads #tbl_trx_mc_raw_fbl5n)
+        -- STEP 2: header (#tbl_trx_mc_raw_fbl5n -> #tbl_trn_mc_othercustomer_header)
+        EXEC dbo.usp_mc0403_insert_othercustomer_header
+            @process_key  = @process_key,
+            @process_code = @process_code,
+            @update_by    = @update_by;
+
+        -- STEP 3: summary (reads #tbl_trx_mc_raw_fbl5n)
         EXEC dbo.usp_mc0403_insert_othercustomer_summary
             @process_key  = @process_key,
             @process_code = @process_code,
