@@ -18,7 +18,8 @@
   group by `process_key, process_code, account` แล้ว insert ลง
   `#tbl_trn_mc_othercustomer_summary`
   - `cust_cd` = `account`
-  - `cust_name` = `0` (คอลัมน์ปลายทางเป็น `INT` ใส่ชื่อลูกค้าไม่ได้)
+  - `cust_name` = `MAX(cust_name)` จาก `#tbl_trx_mc_raw_fbl5n` ตัดเหลือ 200 ตัวอักษร
+    (`trn_mc_othercustomer_summary.cust_name` เป็น `NVARCHAR(200)` แล้ว)
   - `calculate_date` = วันที่ปัจจุบัน
   - ยอดเงินใช้ `amount_in_doc_currency` แปลงผ่าน `TRY_CAST(... AS FLOAT)`
     (ข้อมูลบางแถวเป็นรูปแบบ `-1.70923e+006`) แล้วเป็น `DECIMAL(18,2)`
@@ -65,7 +66,7 @@ BEGIN
            r.process_code,
            CAST(GETDATE() AS DATE)                                  AS calculate_date,
            r.account                                                AS cust_cd,
-           0                                                        AS cust_name,
+           LEFT(MAX(r.cust_name), 200)                              AS cust_name,
            SUM(CASE WHEN r.amt > 0 THEN 1 ELSE 0 END)               AS count_debit_all_type,
            SUM(CASE WHEN r.amt < 0 THEN 1 ELSE 0 END)               AS count_credit_all_type,
            0                                                        AS count_credit_offset_type,
@@ -84,6 +85,7 @@ BEGIN
         SELECT process_key,
                process_code,
                account,
+               cust_name,
                TRY_CAST(amount_in_doc_currency AS FLOAT)   AS amt,
                TRY_CAST(arrears_after_net_due_date AS INT) AS arrears
         FROM #tbl_trx_mc_raw_fbl5n

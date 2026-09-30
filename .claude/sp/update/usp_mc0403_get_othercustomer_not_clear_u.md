@@ -111,7 +111,7 @@ BEGIN
         process_code             NVARCHAR(5)    NOT NULL,
         calculate_date           DATE           NOT NULL,
         cust_cd                  VARCHAR(50)    NOT NULL,
-        cust_name                INT            NOT NULL,
+        cust_name                NVARCHAR(200)  NOT NULL,
         count_debit_all_type     INT            NOT NULL,
         count_credit_all_type    INT            NOT NULL,
         count_credit_offset_type INT            NOT NULL,
