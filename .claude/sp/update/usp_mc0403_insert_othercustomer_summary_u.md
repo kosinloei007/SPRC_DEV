@@ -30,7 +30,13 @@
   - `total_debit_amt` / `total_credit_amt` = ผลรวมของรายการที่ยอด > 0 / < 0
   - `count_due_date` = จำนวนรายการที่ `arrears_after_net_due_date` > 0 (เลย due แล้ว)
   - `count_notyetdue_date` = จำนวนรายการที่ `arrears_after_net_due_date` <= 0
-  - `count_credit_offset_type`, `count_debit_offset_type`, `notyetdue_minimum_amt`,
+  - `count_debit_offset_type` = ค่าเดียวกับ `count_debit_all_type`
+  - `count_credit_offset_type` = จำนวน `document_type` (ไม่ซ้ำ) ใน `predefine_cd = 2003`
+    ต่อ `process_key, process_code, account` ยกเว้นเจอ **DG ตัวเดียว → 0**
+    - DG → 0, DA → 1, DZ → 1
+    - DA+DZ → 2, DA+DG → 2, DZ+DG → 2
+    - DA+DZ+DG → 3
+  - `notyetdue_minimum_amt`,
     `total_minimum_amt`, `customer_flag`, `offset_flag` = `0` (ค่าเริ่มต้น รอ requirement)
   - `create_date` = `GETDATE()`, `create_by` = `@update_by`
 
@@ -72,8 +78,13 @@ BEGIN
            LEFT(MAX(r.cust_name), 200)                              AS cust_name,
            COUNT(DISTINCT CASE WHEN r.is_debit_type  = 1 THEN r.document_type END) AS count_debit_all_type,
            COUNT(DISTINCT CASE WHEN r.is_credit_type = 1 THEN r.document_type END) AS count_credit_all_type,
-           0                                                        AS count_credit_offset_type,
-           0                                                        AS count_debit_offset_type,
+           -- distinct credit types (2003); DG alone does not count -> 0
+           CASE WHEN COUNT(DISTINCT CASE WHEN r.is_credit_type = 1 THEN r.document_type END) = 1
+                 AND MAX(CASE WHEN r.is_credit_type = 1 AND r.document_type = 'DG' THEN 1 ELSE 0 END) = 1
+                THEN 0
+                ELSE COUNT(DISTINCT CASE WHEN r.is_credit_type = 1 THEN r.document_type END)
+           END                                                      AS count_credit_offset_type,
+           COUNT(DISTINCT CASE WHEN r.is_debit_type  = 1 THEN r.document_type END) AS count_debit_offset_type,
            SUM(CASE WHEN r.arrears > 0 THEN 1 ELSE 0 END)           AS count_due_date,
            SUM(CASE WHEN r.arrears <= 0 THEN 1 ELSE 0 END)          AS count_notyetdue_date,
            0                                                        AS notyetdue_minimum_amt,
