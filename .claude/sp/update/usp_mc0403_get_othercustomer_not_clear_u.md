@@ -37,6 +37,11 @@
   `#tbl_trn_mc_othercustomer_header` ลง table จริง `dbo.trn_mc_othercustomer_header`
 - STEP 6: call `usp_mc0403_insert_othercustomer_summary` — insert ข้อมูลจาก
   `#tbl_trn_mc_othercustomer_summary` ลง table จริง `dbo.trn_mc_othercustomer_summary`
+- หลัง `COMMIT` → return 2 result set ของ `calculate_date, cust_cd AS customer_cd,
+  customer_flag, offset_flag` จาก `dbo.trn_mc_othercustomer_header`
+  where `@process_key` / `@process_code`
+  1. `customer_flag = 1` และ `offset_flag = 1`
+  2. `customer_flag = 0` และ `offset_flag = 1`
 
 ## Script
 
@@ -180,8 +185,27 @@ BEGIN
 
         COMMIT TRANSACTION;
 
-        -- return the result set after the commit
-        SELECT 1;
+        -- return the result set after the commit: customers flagged for offset
+        SELECT h.calculate_date,
+               h.cust_cd AS customer_cd,
+               h.customer_flag,
+               h.offset_flag
+        FROM dbo.trn_mc_othercustomer_header h
+        WHERE h.process_key   = @process_key
+          AND h.process_code  = @process_code
+          AND h.customer_flag = 1
+          AND h.offset_flag   = 1;
+
+        -- second result set: offset only (not customer-flagged)
+        SELECT h.calculate_date,
+               h.cust_cd AS customer_cd,
+               h.customer_flag,
+               h.offset_flag
+        FROM dbo.trn_mc_othercustomer_header h
+        WHERE h.process_key   = @process_key
+          AND h.process_code  = @process_code
+          AND h.customer_flag = 0
+          AND h.offset_flag   = 1;
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0
