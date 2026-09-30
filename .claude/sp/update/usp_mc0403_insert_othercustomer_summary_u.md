@@ -23,8 +23,11 @@
   - `calculate_date` = วันที่ปัจจุบัน
   - ยอดเงินใช้ `amount_in_doc_currency` แปลงผ่าน `TRY_CAST(... AS FLOAT)`
     (ข้อมูลบางแถวเป็นรูปแบบ `-1.70923e+006`) แล้วเป็น `DECIMAL(18,2)`
-  - `count_debit_all_type` / `total_debit_amt` = จำนวน / ผลรวมของรายการที่ยอด > 0
-  - `count_credit_all_type` / `total_credit_amt` = จำนวน / ผลรวมของรายการที่ยอด < 0
+  - `count_debit_all_type` = `COUNT(DISTINCT document_type)` ที่ `document_type` อยู่ใน
+    `cfg_predefine_det` `predefine_cd = 2002` (ปัจจุบัน DB, DR, RV)
+  - `count_credit_all_type` = `COUNT(DISTINCT document_type)` ที่ `document_type` อยู่ใน
+    `cfg_predefine_det` `predefine_cd = 2003` (ปัจจุบัน DA, DG, DZ)
+  - `total_debit_amt` / `total_credit_amt` = ผลรวมของรายการที่ยอด > 0 / < 0
   - `count_due_date` = จำนวนรายการที่ `arrears_after_net_due_date` > 0 (เลย due แล้ว)
   - `count_notyetdue_date` = จำนวนรายการที่ `arrears_after_net_due_date` <= 0
   - `count_credit_offset_type`, `count_debit_offset_type`, `notyetdue_minimum_amt`,
@@ -67,8 +70,8 @@ BEGIN
            CAST(GETDATE() AS DATE)                                  AS calculate_date,
            r.account                                                AS cust_cd,
            LEFT(MAX(r.cust_name), 200)                              AS cust_name,
-           SUM(CASE WHEN r.amt > 0 THEN 1 ELSE 0 END)               AS count_debit_all_type,
-           SUM(CASE WHEN r.amt < 0 THEN 1 ELSE 0 END)               AS count_credit_all_type,
+           COUNT(DISTINCT CASE WHEN r.is_debit_type  = 1 THEN r.document_type END) AS count_debit_all_type,
+           COUNT(DISTINCT CASE WHEN r.is_credit_type = 1 THEN r.document_type END) AS count_credit_all_type,
            0                                                        AS count_credit_offset_type,
            0                                                        AS count_debit_offset_type,
            SUM(CASE WHEN r.arrears > 0 THEN 1 ELSE 0 END)           AS count_due_date,
@@ -86,6 +89,13 @@ BEGIN
                process_code,
                account,
                cust_name,
+               document_type,
+               -- debit document types: cfg_predefine_det predefine_cd = 2002
+               CASE WHEN document_type IN (SELECT predefine_key FROM dbo.cfg_predefine_det WHERE predefine_cd = 2002)
+                    THEN 1 ELSE 0 END                     AS is_debit_type,
+               -- credit document types: cfg_predefine_det predefine_cd = 2003
+               CASE WHEN document_type IN (SELECT predefine_key FROM dbo.cfg_predefine_det WHERE predefine_cd = 2003)
+                    THEN 1 ELSE 0 END                     AS is_credit_type,
                TRY_CAST(amount_in_doc_currency AS FLOAT)   AS amt,
                TRY_CAST(arrears_after_net_due_date AS INT) AS arrears
         FROM #tbl_trx_mc_raw_fbl5n
