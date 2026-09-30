@@ -10,19 +10,15 @@
 
 ## รายละเอียดการแก้ไข
 
-- stored นี้ถูก call จาก orchestrator `usp_mc0403_get_othercustomer_not_clear`
-  และใช้ temp table `#tbl_trx_mc_raw_fbl5n` / `#tbl_trn_mc_othercustomer_header`
-  ที่ orchestrator สร้างไว้
-- ถ้าไม่มี temp table ใดตัวหนึ่ง (เรียกเดี่ยว ๆ) → `RAISERROR` แล้วจบ
-- select จาก `#tbl_trx_mc_raw_fbl5n` (where `@process_key` / `@process_code`)
-  group by `process_key, process_code, account` แล้ว insert ลง
-  `#tbl_trn_mc_othercustomer_header`
-  - `cust_cd` = `account`
-  - `cust_name` = `MAX(cust_name)` ตัดเหลือ 200 ตัวอักษร (ความยาวคอลัมน์ปลายทาง)
-  - `calculate_date` = วันที่ปัจจุบัน
-  - `customer_flag` / `offset_flag` = `0` (ค่าเริ่มต้น รอ requirement)
-  - `match_clear_*` / `error_description` / `update_*` = `NULL`
-  - `create_date` = `GETDATE()`, `create_by` = `@update_by`
+- logic เดิม (group `#tbl_trx_mc_raw_fbl5n` → `#tbl_trn_mc_othercustomer_header`) ย้ายไปอยู่ที่
+  `usp_mc0403_insert_othercustomer_header_temp` แล้ว
+- stored นี้เปลี่ยนเป็น: เอาข้อมูลจาก `#tbl_trn_mc_othercustomer_header`
+  (where `@process_key` / `@process_code`) ไป insert ลง table จริง
+  `dbo.trn_mc_othercustomer_header`
+- ใช้ temp table `#tbl_trn_mc_othercustomer_header` ที่ orchestrator
+  `usp_mc0403_get_othercustomer_not_clear` สร้างไว้ ถ้าไม่มี (เรียกเดี่ยว ๆ) → `RAISERROR` แล้วจบ
+- insert ตามคอลัมน์ของ temp table ทุกคอลัมน์ ส่วน `match_clear_date` / `match_clear_by`
+  (มีเฉพาะใน table จริง) ลงเป็น `NULL`
 
 ## Script
 
@@ -38,41 +34,37 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- requires temp tables created by the orchestrator
-    IF OBJECT_ID('tempdb..#tbl_trx_mc_raw_fbl5n') IS NULL
-       OR OBJECT_ID('tempdb..#tbl_trn_mc_othercustomer_header') IS NULL
+    -- requires the temp table created by the orchestrator
+    IF OBJECT_ID('tempdb..#tbl_trn_mc_othercustomer_header') IS NULL
     BEGIN
-        RAISERROR('#tbl_trx_mc_raw_fbl5n / #tbl_trn_mc_othercustomer_header not found - call via usp_mc0403_get_othercustomer_not_clear', 16, 1);
+        RAISERROR('#tbl_trn_mc_othercustomer_header not found - call via usp_mc0403_get_othercustomer_not_clear', 16, 1);
         RETURN;
     END
 
-    INSERT INTO #tbl_trn_mc_othercustomer_header (
+    INSERT INTO dbo.trn_mc_othercustomer_header (
         process_key, process_code, calculate_date, cust_cd, cust_name,
         customer_flag, offset_flag,
         match_clear_sap_status_cd, match_clear_sap_doc_no, match_clear_sap_message,
         error_description, create_date, create_by, update_date, update_by
     )
-    SELECT r.process_key,
-           r.process_code,
-           CAST(GETDATE() AS DATE)     AS calculate_date,
-           r.account                   AS cust_cd,
-           LEFT(MAX(r.cust_name), 200) AS cust_name,
-           0                           AS customer_flag,
-           0                           AS offset_flag,
-           NULL                        AS match_clear_sap_status_cd,
-           NULL                        AS match_clear_sap_doc_no,
-           NULL                        AS match_clear_sap_message,
-           NULL                        AS error_description,
-           GETDATE()                   AS create_date,
-           @update_by                  AS create_by,
-           NULL                        AS update_date,
-           NULL                        AS update_by
-    FROM #tbl_trx_mc_raw_fbl5n r
-    WHERE r.process_key  = @process_key
-      AND r.process_code = @process_code
-    GROUP BY r.process_key,
-             r.process_code,
-             r.account;
+    SELECT h.process_key,
+           h.process_code,
+           h.calculate_date,
+           h.cust_cd,
+           h.cust_name,
+           h.customer_flag,
+           h.offset_flag,
+           h.match_clear_sap_status_cd,
+           h.match_clear_sap_doc_no,
+           h.match_clear_sap_message,
+           h.error_description,
+           h.create_date,
+           h.create_by,
+           h.update_date,
+           h.update_by
+    FROM #tbl_trn_mc_othercustomer_header h
+    WHERE h.process_key  = @process_key
+      AND h.process_code = @process_code;
 END
 GO
 ```
@@ -100,10 +92,16 @@ EXEC dbo.usp_mc0403_get_raw_fbl5n
     @process_code = N'MC04',
     @update_by    = 'kosin';
 
+EXEC dbo.usp_mc0403_insert_othercustomer_header_temp
+    @process_key  = N'TEST_KEY',
+    @process_code = N'MC04',
+    @update_by    = 'kosin';
+
 EXEC dbo.usp_mc0403_insert_othercustomer_header
     @process_key  = N'TEST_KEY',
     @process_code = N'MC04',
     @update_by    = 'kosin';
 
-SELECT * FROM #tbl_trn_mc_othercustomer_header;
+SELECT * FROM dbo.trn_mc_othercustomer_header
+WHERE process_key = 'TEST_KEY' AND process_code = N'MC04';
 ```

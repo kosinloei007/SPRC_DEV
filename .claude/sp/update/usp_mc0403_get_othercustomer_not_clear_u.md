@@ -30,6 +30,13 @@
 - STEP 3: call `usp_mc0403_insert_othercustomer_summary_temp` (ย้าย logic มาจาก
   `usp_mc0403_insert_othercustomer_summary` แล้วเรียกตัวนี้แทน) (ภายใน transaction
   เดียวกัน) โดย summary ใช้ข้อมูลจาก `#tbl_trx_mc_raw_fbl5n`
+- STEP 4: call `usp_mc0403_update_othercustomer_header_temp` — update
+  `customer_flag` / `offset_flag` ใน `#tbl_trn_mc_othercustomer_header` จาก
+  `#tbl_trn_mc_othercustomer_summary` (join `process_key, process_code, cust_cd`)
+- STEP 5: call `usp_mc0403_insert_othercustomer_header` — insert ข้อมูลจาก
+  `#tbl_trn_mc_othercustomer_header` ลง table จริง `dbo.trn_mc_othercustomer_header`
+- STEP 6: call `usp_mc0403_insert_othercustomer_summary` — insert ข้อมูลจาก
+  `#tbl_trn_mc_othercustomer_summary` ลง table จริง `dbo.trn_mc_othercustomer_summary`
 
 ## Script
 
@@ -147,6 +154,24 @@ BEGIN
 
         -- STEP 3: summary (reads #tbl_trx_mc_raw_fbl5n)
         EXEC dbo.usp_mc0403_insert_othercustomer_summary_temp
+            @process_key  = @process_key,
+            @process_code = @process_code,
+            @update_by    = @update_by;
+
+        -- STEP 4: header flags (#tbl_trn_mc_othercustomer_summary -> #tbl_trn_mc_othercustomer_header)
+        EXEC dbo.usp_mc0403_update_othercustomer_header_temp
+            @process_key  = @process_key,
+            @process_code = @process_code,
+            @update_by    = @update_by;
+
+        -- STEP 5: persist header (#tbl_trn_mc_othercustomer_header -> dbo.trn_mc_othercustomer_header)
+        EXEC dbo.usp_mc0403_insert_othercustomer_header
+            @process_key  = @process_key,
+            @process_code = @process_code,
+            @update_by    = @update_by;
+
+        -- STEP 6: persist summary (#tbl_trn_mc_othercustomer_summary -> dbo.trn_mc_othercustomer_summary)
+        EXEC dbo.usp_mc0403_insert_othercustomer_summary
             @process_key  = @process_key,
             @process_code = @process_code,
             @update_by    = @update_by;
