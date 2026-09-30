@@ -38,8 +38,10 @@
     - DG → 0, DA → 1, DZ → 1
     - DA+DZ → 2, DA+DG → 2, DZ+DG → 2
     - DA+DZ+DG → 3
-  - `notyetdue_minimum_amt`,
-    `total_minimum_amt`, `customer_flag`, `offset_flag` = `0` (ค่าเริ่มต้น รอ requirement)
+  - `notyetdue_minimum_amt` = `MIN(amount_in_doc_currency)` ของรายการที่
+    `arrears_after_net_due_date` < 0 ต่อ `process_key, process_code, account`
+    — ถ้า account นั้นไม่มีรายการ < 0 เลย ลง `0` (คอลัมน์เป็น `NOT NULL`)
+  - `total_minimum_amt`, `customer_flag`, `offset_flag` = `0` (ค่าเริ่มต้น รอ requirement)
   - `create_date` = `GETDATE()`, `create_by` = `@update_by`
 
 ## Script
@@ -89,7 +91,8 @@ BEGIN
            COUNT(DISTINCT CASE WHEN r.is_debit_type  = 1 THEN r.document_type END) AS count_debit_offset_type,
            COUNT(CASE WHEN r.arrears >= 0 THEN 1 END)               AS count_due_date,
            COUNT(CASE WHEN r.arrears < 0 THEN 1 END)                AS count_notyetdue_date,
-           0                                                        AS notyetdue_minimum_amt,
+           -- min amount among not-yet-due rows; 0 when the account has none (column is NOT NULL)
+           ISNULL(CAST(MIN(CASE WHEN r.arrears < 0 THEN r.amt END) AS DECIMAL(18, 2)), 0) AS notyetdue_minimum_amt,
            0                                                        AS total_minimum_amt,
            CAST(SUM(CASE WHEN r.amt < 0 THEN r.amt ELSE 0 END) AS DECIMAL(18, 2)) AS total_credit_amt,
            CAST(SUM(CASE WHEN r.amt > 0 THEN r.amt ELSE 0 END) AS DECIMAL(18, 2)) AS total_debit_amt,
