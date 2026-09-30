@@ -51,7 +51,11 @@
     1. `total_credit_amt < 0 AND total_debit_amt > 0 AND count_notyetdue_date = 0`
     2. `total_credit_amt < 0 AND total_debit_amt > 0 AND count_notyetdue_date <> 0
        AND (notyetdue_minimum_amt + total_credit_amt) >= 0`
-  - `total_minimum_amt`, `offset_flag` = `0` (ค่าเริ่มต้น รอ requirement)
+  - `offset_flag` = `1` ถ้าเข้าเงื่อนไขใดเงื่อนไขหนึ่ง นอกนั้น `0`
+    (คำนวณด้วย `UPDATE` หลังจากคำนวณ `customer_flag` แล้ว)
+    1. `customer_flag = 1`
+    2. `total_credit_amt < 0 AND total_debit_amt > 0 AND count_notyetdue_date > 0`
+  - `total_minimum_amt` = `0` (ค่าเริ่มต้น รอ requirement)
   - `create_date` = `GETDATE()`, `create_by` = `@update_by`
 
 ## Script
@@ -146,6 +150,22 @@ BEGIN
                  AND s.total_debit_amt > 0
                  AND s.count_notyetdue_date <> 0
                  AND (s.notyetdue_minimum_amt + s.total_credit_amt) >= 0
+                    THEN 1
+                ELSE 0
+            END
+    FROM #tbl_trn_mc_othercustomer_summary s
+    WHERE s.process_key  = @process_key
+      AND s.process_code = @process_code;
+
+    -- offset_flag: needs customer_flag set above
+    UPDATE s
+    SET offset_flag =
+            CASE
+                WHEN s.customer_flag = 1
+                    THEN 1
+                WHEN s.total_credit_amt < 0
+                 AND s.total_debit_amt > 0
+                 AND s.count_notyetdue_date > 0
                     THEN 1
                 ELSE 0
             END
