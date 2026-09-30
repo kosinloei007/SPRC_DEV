@@ -27,7 +27,12 @@
     `cfg_predefine_det` `predefine_cd = 2002` (ปัจจุบัน DB, DR, RV)
   - `count_credit_all_type` = `COUNT(DISTINCT document_type)` ที่ `document_type` อยู่ใน
     `cfg_predefine_det` `predefine_cd = 2003` (ปัจจุบัน DA, DG, DZ)
-  - `total_debit_amt` / `total_credit_amt` = ผลรวมของรายการที่ยอด > 0 / < 0
+  - `total_credit_amt` = `SUM(amount_in_doc_currency)` ต่อ `process_key, process_code, account`
+    เฉพาะ `document_type` ใน `cfg_predefine_det` `predefine_cd = 2003`
+    และ `arrears_after_net_due_date` >= 0 (ไม่มีรายการ → `0`)
+  - `total_debit_amt` = `SUM(amount_in_doc_currency)` ต่อ `process_key, process_code, account`
+    เฉพาะ `document_type` ใน `cfg_predefine_det` `predefine_cd = 2002`
+    และ `arrears_after_net_due_date` < 0 (ไม่มีรายการ → `0`)
   - `count_due_date` = `COUNT` รายการที่ `arrears_after_net_due_date` >= 0
     ต่อ `process_key, process_code, account`
   - `count_notyetdue_date` = `COUNT` รายการที่ `arrears_after_net_due_date` < 0
@@ -41,7 +46,12 @@
   - `notyetdue_minimum_amt` = `MIN(amount_in_doc_currency)` ของรายการที่
     `arrears_after_net_due_date` < 0 ต่อ `process_key, process_code, account`
     — ถ้า account นั้นไม่มีรายการ < 0 เลย ลง `0` (คอลัมน์เป็น `NOT NULL`)
-  - `total_minimum_amt`, `customer_flag`, `offset_flag` = `0` (ค่าเริ่มต้น รอ requirement)
+  - `customer_flag` = `1` ถ้าเข้าเงื่อนไขใดเงื่อนไขหนึ่ง นอกนั้น `0`
+    (คำนวณด้วย `UPDATE` หลัง INSERT เพราะต้องใช้ค่าที่ aggregate แล้ว)
+    1. `total_credit_amt < 0 AND total_debit_amt > 0 AND count_notyetdue_date = 0`
+    2. `total_credit_amt < 0 AND total_debit_amt > 0 AND count_notyetdue_date <> 0
+       AND (notyetdue_minimum_amt + total_credit_amt) >= 0`
+  - `total_minimum_amt`, `offset_flag` = `0` (ค่าเริ่มต้น รอ requirement)
   - `create_date` = `GETDATE()`, `create_by` = `@update_by`
 
 ## Script
@@ -94,8 +104,10 @@ BEGIN
            -- min amount among not-yet-due rows; 0 when the account has none (column is NOT NULL)
            ISNULL(CAST(MIN(CASE WHEN r.arrears < 0 THEN r.amt END) AS DECIMAL(18, 2)), 0) AS notyetdue_minimum_amt,
            0                                                        AS total_minimum_amt,
-           CAST(SUM(CASE WHEN r.amt < 0 THEN r.amt ELSE 0 END) AS DECIMAL(18, 2)) AS total_credit_amt,
-           CAST(SUM(CASE WHEN r.amt > 0 THEN r.amt ELSE 0 END) AS DECIMAL(18, 2)) AS total_debit_amt,
+           -- credit document types (2003) that are due (arrears >= 0)
+           CAST(SUM(CASE WHEN r.is_credit_type = 1 AND r.arrears >= 0 THEN r.amt ELSE 0 END) AS DECIMAL(18, 2)) AS total_credit_amt,
+           -- debit document types (2002) that are not yet due (arrears < 0)
+           CAST(SUM(CASE WHEN r.is_debit_type = 1 AND r.arrears < 0 THEN r.amt ELSE 0 END) AS DECIMAL(18, 2)) AS total_debit_amt,
            0                                                        AS customer_flag,
            0                                                        AS offset_flag,
            GETDATE()                                                AS create_date,
@@ -121,6 +133,25 @@ BEGIN
     GROUP BY r.process_key,
              r.process_code,
              r.account;
+
+    -- customer_flag: needs the aggregated totals above
+    UPDATE s
+    SET customer_flag =
+            CASE
+                WHEN s.total_credit_amt < 0
+                 AND s.total_debit_amt > 0
+                 AND s.count_notyetdue_date = 0
+                    THEN 1
+                WHEN s.total_credit_amt < 0
+                 AND s.total_debit_amt > 0
+                 AND s.count_notyetdue_date <> 0
+                 AND (s.notyetdue_minimum_amt + s.total_credit_amt) >= 0
+                    THEN 1
+                ELSE 0
+            END
+    FROM #tbl_trn_mc_othercustomer_summary s
+    WHERE s.process_key  = @process_key
+      AND s.process_code = @process_code;
 END
 GO
 ```
