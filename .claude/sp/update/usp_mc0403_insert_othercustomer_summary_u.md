@@ -28,7 +28,8 @@
   - `count_credit_all_type` = `COUNT(DISTINCT document_type)` ที่ `document_type` อยู่ใน
     `cfg_predefine_det` `predefine_cd = 2003` (ปัจจุบัน DA, DG, DZ)
   - `total_debit_amt` / `total_credit_amt` = ผลรวมของรายการที่ยอด > 0 / < 0
-  - `count_due_date` = จำนวนรายการที่ `arrears_after_net_due_date` > 0 (เลย due แล้ว)
+  - `count_due_date` = `COUNT` รายการที่ `arrears_after_net_due_date` >= 0
+    ต่อ `process_key, process_code, account`
   - `count_notyetdue_date` = จำนวนรายการที่ `arrears_after_net_due_date` <= 0
   - `count_debit_offset_type` = ค่าเดียวกับ `count_debit_all_type`
   - `count_credit_offset_type` = จำนวน `document_type` (ไม่ซ้ำ) ใน `predefine_cd = 2003`
@@ -85,7 +86,7 @@ BEGIN
                 ELSE COUNT(DISTINCT CASE WHEN r.is_credit_type = 1 THEN r.document_type END)
            END                                                      AS count_credit_offset_type,
            COUNT(DISTINCT CASE WHEN r.is_debit_type  = 1 THEN r.document_type END) AS count_debit_offset_type,
-           SUM(CASE WHEN r.arrears > 0 THEN 1 ELSE 0 END)           AS count_due_date,
+           COUNT(CASE WHEN r.arrears >= 0 THEN 1 END)               AS count_due_date,
            SUM(CASE WHEN r.arrears <= 0 THEN 1 ELSE 0 END)          AS count_notyetdue_date,
            0                                                        AS notyetdue_minimum_amt,
            0                                                        AS total_minimum_amt,
