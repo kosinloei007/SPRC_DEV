@@ -10,11 +10,25 @@
 
 ## รายละเอียดการแก้ไข
 
-- stored นี้ถูก call จาก orchestrator `usp_mc0403_get_othercustomer_not_clear` (STEP 2)
-  และใช้ข้อมูลจาก temp table `#tbl_trx_mc_raw_fbl5n` ที่ orchestrator สร้างไว้
-- ถ้าไม่มี `#tbl_trx_mc_raw_fbl5n` (เรียกเดี่ยว ๆ) → `RAISERROR` แล้วจบ
-- ตัด `SELECT 1` ออก เพื่อไม่ให้มี result set เกินไปปนกับ orchestrator
-- TODO: logic insert ลง `trn_mc_othercustomer_summary` (รอ requirement)
+- stored นี้ถูก call จาก orchestrator `usp_mc0403_get_othercustomer_not_clear` (STEP 3)
+  และใช้ temp table `#tbl_trx_mc_raw_fbl5n` / `#tbl_trn_mc_othercustomer_summary`
+  ที่ orchestrator สร้างไว้
+- ถ้าไม่มี temp table ใดตัวหนึ่ง (เรียกเดี่ยว ๆ) → `RAISERROR` แล้วจบ
+- select จาก `#tbl_trx_mc_raw_fbl5n` (where `@process_key` / `@process_code`)
+  group by `process_key, process_code, account` แล้ว insert ลง
+  `#tbl_trn_mc_othercustomer_summary`
+  - `cust_cd` = `account`
+  - `cust_name` = `0` (คอลัมน์ปลายทางเป็น `INT` ใส่ชื่อลูกค้าไม่ได้)
+  - `calculate_date` = วันที่ปัจจุบัน
+  - ยอดเงินใช้ `amount_in_doc_currency` แปลงผ่าน `TRY_CAST(... AS FLOAT)`
+    (ข้อมูลบางแถวเป็นรูปแบบ `-1.70923e+006`) แล้วเป็น `DECIMAL(18,2)`
+  - `count_debit_all_type` / `total_debit_amt` = จำนวน / ผลรวมของรายการที่ยอด > 0
+  - `count_credit_all_type` / `total_credit_amt` = จำนวน / ผลรวมของรายการที่ยอด < 0
+  - `count_due_date` = จำนวนรายการที่ `arrears_after_net_due_date` > 0 (เลย due แล้ว)
+  - `count_notyetdue_date` = จำนวนรายการที่ `arrears_after_net_due_date` <= 0
+  - `count_credit_offset_type`, `count_debit_offset_type`, `notyetdue_minimum_amt`,
+    `total_minimum_amt`, `customer_flag`, `offset_flag` = `0` (ค่าเริ่มต้น รอ requirement)
+  - `create_date` = `GETDATE()`, `create_by` = `@update_by`
 
 ## Script
 
@@ -30,16 +44,55 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- requires #tbl_trx_mc_raw_fbl5n created by the orchestrator
+    -- requires temp tables created by the orchestrator
     IF OBJECT_ID('tempdb..#tbl_trx_mc_raw_fbl5n') IS NULL
+       OR OBJECT_ID('tempdb..#tbl_trn_mc_othercustomer_summary') IS NULL
     BEGIN
-        RAISERROR('#tbl_trx_mc_raw_fbl5n not found - call via usp_mc0403_get_othercustomer_not_clear', 16, 1);
+        RAISERROR('#tbl_trx_mc_raw_fbl5n / #tbl_trn_mc_othercustomer_summary not found - call via usp_mc0403_get_othercustomer_not_clear', 16, 1);
         RETURN;
     END
 
-    -- TODO: INSERT INTO dbo.trn_mc_othercustomer_summary (...)
-    --       SELECT ... FROM #tbl_trx_mc_raw_fbl5n
-    --       WHERE process_key = @process_key AND process_code = @process_code
+    INSERT INTO #tbl_trn_mc_othercustomer_summary (
+        process_key, process_code, calculate_date, cust_cd, cust_name,
+        count_debit_all_type, count_credit_all_type,
+        count_credit_offset_type, count_debit_offset_type,
+        count_due_date, count_notyetdue_date,
+        notyetdue_minimum_amt, total_minimum_amt,
+        total_credit_amt, total_debit_amt,
+        customer_flag, offset_flag, create_date, create_by
+    )
+    SELECT r.process_key,
+           r.process_code,
+           CAST(GETDATE() AS DATE)                                  AS calculate_date,
+           r.account                                                AS cust_cd,
+           0                                                        AS cust_name,
+           SUM(CASE WHEN r.amt > 0 THEN 1 ELSE 0 END)               AS count_debit_all_type,
+           SUM(CASE WHEN r.amt < 0 THEN 1 ELSE 0 END)               AS count_credit_all_type,
+           0                                                        AS count_credit_offset_type,
+           0                                                        AS count_debit_offset_type,
+           SUM(CASE WHEN r.arrears > 0 THEN 1 ELSE 0 END)           AS count_due_date,
+           SUM(CASE WHEN r.arrears <= 0 THEN 1 ELSE 0 END)          AS count_notyetdue_date,
+           0                                                        AS notyetdue_minimum_amt,
+           0                                                        AS total_minimum_amt,
+           CAST(SUM(CASE WHEN r.amt < 0 THEN r.amt ELSE 0 END) AS DECIMAL(18, 2)) AS total_credit_amt,
+           CAST(SUM(CASE WHEN r.amt > 0 THEN r.amt ELSE 0 END) AS DECIMAL(18, 2)) AS total_debit_amt,
+           0                                                        AS customer_flag,
+           0                                                        AS offset_flag,
+           GETDATE()                                                AS create_date,
+           @update_by                                               AS create_by
+    FROM (
+        SELECT process_key,
+               process_code,
+               account,
+               TRY_CAST(amount_in_doc_currency AS FLOAT)   AS amt,
+               TRY_CAST(arrears_after_net_due_date AS INT) AS arrears
+        FROM #tbl_trx_mc_raw_fbl5n
+        WHERE process_key  = @process_key
+          AND process_code = @process_code
+    ) r
+    GROUP BY r.process_key,
+             r.process_code,
+             r.account;
 END
 GO
 ```
@@ -47,7 +100,7 @@ GO
 ## ตัวอย่างการเรียกใช้
 
 ```sql
--- simulate the orchestrator's temp table
+-- simulate the orchestrator's temp tables
 SELECT TOP (0)
        process_key, process_code, cleared_openitems_flag, account, cust_name,
        reference, assignment, document_type, billing_document, document_number,
@@ -58,8 +111,19 @@ SELECT TOP (0)
 INTO #tbl_trx_mc_raw_fbl5n
 FROM dbo.trx_mc_raw_fbl5n;
 
+SELECT TOP (0) *
+INTO #tbl_trn_mc_othercustomer_summary
+FROM dbo.trn_mc_othercustomer_summary;
+
+EXEC dbo.usp_mc0403_get_raw_fbl5n
+    @process_key  = N'TEST_KEY',
+    @process_code = N'MC04',
+    @update_by    = 'kosin';
+
 EXEC dbo.usp_mc0403_insert_othercustomer_summary
     @process_key  = N'TEST_KEY',
     @process_code = N'MC04',
     @update_by    = 'kosin';
+
+SELECT * FROM #tbl_trn_mc_othercustomer_summary;
 ```
