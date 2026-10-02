@@ -17,10 +17,10 @@
 - เพิ่ม parameter `@process_code NVARCHAR(5)`
 - select ข้อมูลจาก `dbo.trx_mc_raw_othercustomer` ไป insert ลง `dbo.trn_mc_othercustomer_detail`
   โดยมีเงื่อนไขเป็น `process_key` / `process_code` / `calculate_date` / `cust_cd` (= `@customer_cd`)
-  / `customer_flag` (= `@customer_flag`)
+  / `customer_flag` (= `@customer_flag`) / `offset_flag` (= `@offset_flag`)
 - `@calculate_date` รับเป็น `YYYYMMDD` แล้วแปลงเป็น `date` (style 112)
 - ก่อน insert → `DELETE` ข้อมูลเดิมใน `dbo.trn_mc_othercustomer_detail` ของ key เดียวกัน (รันซ้ำได้ ไม่ชน PK)
-  และ `customer_flag = @customer_flag` — detail ไม่มีคอลัมน์ `customer_flag` จึงเช็คผ่าน
+  และ `customer_flag = @customer_flag` / `offset_flag = @offset_flag` — detail ไม่มี 2 คอลัมน์นี้ จึงเช็คผ่าน
   `EXISTS` กับ `trx_mc_raw_othercustomer` (join ด้วย key + `document_no`)
 - mapping:
   - `reference_no` = `r.reference` (ต่อจาก `document_no`); ถ้า `NULL` → `''` (คอลัมน์เป็น NOT NULL)
@@ -35,7 +35,6 @@
   - `resitem_flag` = `0` (fix)
   - `accum_thb_gross` / `remaining_amt` → `NULL` (ไว้คำนวณ offset ทีหลัง)
   - `create_date` = `GETDATE()`, `create_by` = `@update_by`
-- `@offset_flag` ยังไม่ได้ใช้
 - เพิ่ม `SET XACT_ABORT ON` + `BEGIN TRY / BEGIN CATCH`
 - `DELETE` + `INSERT` อยู่ใน transaction เดียวกัน (`BEGIN TRANSACTION` / `COMMIT TRANSACTION`)
 - ถ้าเกิด error (รวมถึง `@calculate_date` แปลงเป็น date ไม่ได้) → `ROLLBACK TRANSACTION`
@@ -91,6 +90,7 @@ BEGIN
                   AND r.cust_cd        = d.cust_cd
                   AND r.document_no    = d.document_no
                   AND r.customer_flag  = @customer_flag
+                  AND r.offset_flag    = @offset_flag
           );
 
         INSERT INTO dbo.trn_mc_othercustomer_detail (
@@ -135,7 +135,8 @@ BEGIN
           AND r.process_code   = @process_code
           AND r.calculate_date = @calc_date
           AND r.cust_cd        = @customer_cd
-          AND r.customer_flag  = @customer_flag;
+          AND r.customer_flag  = @customer_flag
+          AND r.offset_flag    = @offset_flag;
 
         COMMIT TRANSACTION;
 
