@@ -42,6 +42,7 @@
   where `@process_key` / `@process_code`
   1. `customer_flag = 1` และ `offset_flag = 1`
   2. `customer_flag = 0` และ `offset_flag = 1`
+  — **ตอนนี้ comment ทั้ง 2 result set ไว้ก่อน (ไม่ return ค่า)**
 
 ## Script
 
@@ -185,6 +186,8 @@ BEGIN
 
         COMMIT TRANSACTION;
 
+        -- (result sets disabled for now)
+        /*
         -- return the result set after the commit: customers flagged for offset
         SELECT h.calculate_date,
                h.cust_cd AS customer_cd,
@@ -206,6 +209,7 @@ BEGIN
           AND h.process_code  = @process_code
           AND h.customer_flag = 0
           AND h.offset_flag   = 1;
+        */
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0
