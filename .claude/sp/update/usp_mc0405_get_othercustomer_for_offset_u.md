@@ -173,8 +173,8 @@ EXEC dbo.usp_mc0405_get_othercustomer_for_offset
     @process_code   = N'MC04',
     @calculate_date = '20261001',
     @customer_cd    = '8517448',
-    @customer_flag  = 1,
-    @offset_flag    = 0,
+    @customer_flag  = 0,
+    @offset_flag    = 1,
     @update_by      = 'kosin';
 
 SELECT * FROM dbo.trn_mc_othercustomer_detail
