@@ -17,8 +17,11 @@
 - เพิ่ม parameter `@process_code NVARCHAR(5)`
 - select ข้อมูลจาก `dbo.trx_mc_raw_othercustomer` ไป insert ลง `dbo.trn_mc_othercustomer_detail`
   โดยมีเงื่อนไขเป็น `process_key` / `process_code` / `calculate_date` / `cust_cd` (= `@customer_cd`)
+  / `customer_flag` (= `@customer_flag`)
 - `@calculate_date` รับเป็น `YYYYMMDD` แล้วแปลงเป็น `date` (style 112)
 - ก่อน insert → `DELETE` ข้อมูลเดิมใน `dbo.trn_mc_othercustomer_detail` ของ key เดียวกัน (รันซ้ำได้ ไม่ชน PK)
+  และ `customer_flag = @customer_flag` — detail ไม่มีคอลัมน์ `customer_flag` จึงเช็คผ่าน
+  `EXISTS` กับ `trx_mc_raw_othercustomer` (join ด้วย key + `document_no`)
 - mapping:
   - `reference_no` = `r.reference` (ต่อจาก `document_no`); ถ้า `NULL` → `''` (คอลัมน์เป็น NOT NULL)
   - `thb_gross` ใน raw เป็นข้อความรูปแบบ SAP (`40,091.92-`) → ตัด `,` แล้วย้าย `-` ท้ายมาไว้ข้างหน้า → `DECIMAL(18,2)`
@@ -32,7 +35,7 @@
   - `resitem_flag` = `0` (fix)
   - `accum_thb_gross` / `remaining_amt` → `NULL` (ไว้คำนวณ offset ทีหลัง)
   - `create_date` = `GETDATE()`, `create_by` = `@update_by`
-- `@customer_flag` / `@offset_flag` ยังไม่ได้ใช้
+- `@offset_flag` ยังไม่ได้ใช้
 - เพิ่ม `SET XACT_ABORT ON` + `BEGIN TRY / BEGIN CATCH`
 - `DELETE` + `INSERT` อยู่ใน transaction เดียวกัน (`BEGIN TRANSACTION` / `COMMIT TRANSACTION`)
 - ถ้าเกิด error (รวมถึง `@calculate_date` แปลงเป็น date ไม่ได้) → `ROLLBACK TRANSACTION`
@@ -72,11 +75,23 @@ BEGIN
         BEGIN TRANSACTION;
 
         -- re-run safe: clear this key's rows before inserting
-        DELETE FROM dbo.trn_mc_othercustomer_detail
-        WHERE process_key    = @process_key
-          AND process_code   = @process_code
-          AND calculate_date = @calc_date
-          AND cust_cd        = @customer_cd;
+        -- detail has no customer_flag: match it via the raw rows
+        DELETE d
+        FROM dbo.trn_mc_othercustomer_detail d
+        WHERE d.process_key    = @process_key
+          AND d.process_code   = @process_code
+          AND d.calculate_date = @calc_date
+          AND d.cust_cd        = @customer_cd
+          AND EXISTS (
+                SELECT 1
+                FROM dbo.trx_mc_raw_othercustomer r
+                WHERE r.process_key    = d.process_key
+                  AND r.process_code   = d.process_code
+                  AND r.calculate_date = d.calculate_date
+                  AND r.cust_cd        = d.cust_cd
+                  AND r.document_no    = d.document_no
+                  AND r.customer_flag  = @customer_flag
+          );
 
         INSERT INTO dbo.trn_mc_othercustomer_detail (
             process_key, process_code, calculate_date, cust_cd, document_no,
@@ -119,7 +134,8 @@ BEGIN
         WHERE r.process_key    = @process_key
           AND r.process_code   = @process_code
           AND r.calculate_date = @calc_date
-          AND r.cust_cd        = @customer_cd;
+          AND r.cust_cd        = @customer_cd
+          AND r.customer_flag  = @customer_flag;
 
         COMMIT TRANSACTION;
 
