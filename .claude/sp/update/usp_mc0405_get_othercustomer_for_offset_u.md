@@ -16,8 +16,13 @@
 
 - copy concept มาจาก `usp_mc0404_get_othercustomer_for_offset` (จะแก้บางสูตรภายหลัง)
 - ใช้ temp table `#tbl_trn_mc_othercustomer_detail` ที่ orchestrator
-  (`usp_mc0403_get_othercustomer_not_clear`) สร้างไว้ — stored นี้ **ไม่เขียน/ไม่ลบ**
-  table จริง `dbo.trn_mc_othercustomer_detail` แล้ว
+  (`usp_mc0403_get_othercustomer_not_clear`) สร้างไว้ เป็นที่พักข้อมูลและคำนวณ offset
+- หลังคำนวณเสร็จ → insert ข้อมูลจาก `#tbl_trn_mc_othercustomer_detail` ลง table จริง
+  `dbo.trn_mc_othercustomer_detail` (16 field; ไม่เอา `seq` เพราะ table จริงไม่มี)
+  - ก่อน insert → `DELETE` ข้อมูลเดิมใน table จริงของ key เดียวกัน
+    (`process_key` / `process_code` / `calculate_date` / `cust_cd`) ที่ `customer_flag` /
+    `offset_flag` ตรงกับ parameter (เช็คผ่าน `EXISTS` กับ `trx_mc_raw_othercustomer`
+    ด้วย key + `document_no`) — รันซ้ำได้ ไม่ชน PK
 - ถ้าไม่มี temp table (เรียกเดี่ยว ๆ) → `RAISERROR` แล้วจบ
 - select ข้อมูลจาก `dbo.trx_mc_raw_othercustomer` ไป insert ลง `#tbl_trn_mc_othercustomer_detail`
   โดยมีเงื่อนไขเป็น `process_key` / `process_code` / `calculate_date` / `cust_cd` (= `@customer_cd`)
@@ -41,7 +46,8 @@
   - `resitem_flag` = `0` (fix)
   - `accum_thb_gross` / `remaining_amt` / `selection_flag` — คำนวณหลัง insert
     (ตาม `.claude/img/2026-10-03_21-16-46.jpg`):
-    - แถว `dc_flag = 'C'` → `accum_thb_gross = 0`, `remaining_amt = 0`, `selection_flag = 2`
+    - แถว `dc_flag = 'C'` → `accum_thb_gross = NULL`, `remaining_amt = NULL`, `selection_flag = 2`
+      (รูปเขียนว่าให้ลง `0` แต่แก้เป็น `NULL` ตาม requirement ล่าสุด)
     - แถว `dc_flag = 'D'` ไล่ตาม `seq` (loop ทีละแถว):
       - `accum_thb_gross` = `remaining_amt` ของแถว D ก่อนหน้า − `thb_gross`
         (แถว D แรก: `total_credit_amt` แปลงเป็นบวก − `thb_gross`)
@@ -104,7 +110,7 @@ BEGIN
         -- clear the whole temp table before inserting (no condition)
         DELETE FROM #tbl_trn_mc_othercustomer_detail;
 
-        -- insert into the temp table (dbo.trn_mc_othercustomer_detail is not written here)
+        -- insert into the temp table (persisted to dbo.trn_mc_othercustomer_detail below)
         INSERT INTO #tbl_trn_mc_othercustomer_detail (
             process_key, process_code, calculate_date, cust_cd, document_no,
             reference_no, dc_flag, total_credit_amt, net_due_date, thb_gross,
@@ -155,8 +161,8 @@ BEGIN
 
         -- credit rows: nothing to offset against
         UPDATE #tbl_trn_mc_othercustomer_detail
-        SET accum_thb_gross = 0,
-            remaining_amt   = 0,
+        SET accum_thb_gross = NULL,
+            remaining_amt   = NULL,
             selection_flag  = 2
         WHERE dc_flag = 'C';
 
@@ -194,6 +200,40 @@ BEGIN
             WHERE dc_flag = 'D'
               AND seq > @seq;
         END
+
+        -- persist: #tbl_trn_mc_othercustomer_detail -> dbo.trn_mc_othercustomer_detail
+        -- re-run safe: clear this key's rows before inserting
+        -- detail has no customer_flag: match it via the raw rows
+        DELETE d
+        FROM dbo.trn_mc_othercustomer_detail d
+        WHERE d.process_key    = @process_key
+          AND d.process_code   = @process_code
+          AND d.calculate_date = @calc_date
+          AND d.cust_cd        = @customer_cd
+          AND EXISTS (
+                SELECT 1
+                FROM dbo.trx_mc_raw_othercustomer r
+                WHERE r.process_key    = d.process_key
+                  AND r.process_code   = d.process_code
+                  AND r.calculate_date = d.calculate_date
+                  AND r.cust_cd        = d.cust_cd
+                  AND r.document_no    = d.document_no
+                  AND r.customer_flag  = @customer_flag
+                  AND r.offset_flag    = @offset_flag
+          );
+
+        -- seq is temp-only: not persisted
+        INSERT INTO dbo.trn_mc_othercustomer_detail (
+            process_key, process_code, calculate_date, cust_cd, document_no,
+            reference_no, dc_flag, total_credit_amt, net_due_date, thb_gross,
+            accum_thb_gross, remaining_amt, selection_flag, resitem_flag,
+            create_date, create_by
+        )
+        SELECT t.process_key, t.process_code, t.calculate_date, t.cust_cd, t.document_no,
+               t.reference_no, t.dc_flag, t.total_credit_amt, t.net_due_date, t.thb_gross,
+               t.accum_thb_gross, t.remaining_amt, t.selection_flag, t.resitem_flag,
+               t.create_date, t.create_by
+        FROM #tbl_trn_mc_othercustomer_detail t;
 
         COMMIT TRANSACTION;
 
@@ -246,4 +286,7 @@ EXEC dbo.usp_mc0405_get_othercustomer_for_offset
 SELECT * FROM #tbl_trn_mc_othercustomer_detail
 WHERE process_key = '1' AND process_code = N'MC04' AND cust_cd = '8516784'
 ORDER BY seq;
+
+SELECT * FROM dbo.trn_mc_othercustomer_detail
+WHERE process_key = '1' AND process_code = N'MC04' AND cust_cd = '8516784';
 ```

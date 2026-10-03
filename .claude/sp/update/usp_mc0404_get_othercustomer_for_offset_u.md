@@ -30,7 +30,10 @@
   - `total_credit_amt` = `SUM(thb_gross)` ของแถวที่ `dc_flag = 'C'` group by key
     (`process_key` / `process_code` / `calculate_date` / `cust_cd`) ใส่ทุกแถวของ key นั้น
     (ใช้ `SUM() OVER (PARTITION BY ...)`; ค่าเป็นลบตาม `thb_gross`, ไม่มี credit → `0`)
-  - `selection_flag` = `1` ถ้า `r.customer_flag = 1` และ `r.net_due_date <= @calculate_date` ไม่งั้น `0`
+  - `selection_flag`:
+    - `dc_flag = 'C'` → `2`
+    - `dc_flag = 'D'` → `1` ถ้า `r.customer_flag = 1` และ `r.net_due_date <= @calculate_date` ไม่งั้น `0`
+
     (`net_due_date` ใน raw เป็นข้อความ `DD.MM.YYYY` → `TRY_CONVERT(DATE, ..., 104)`; แปลงไม่ได้ → `0`)
   - `resitem_flag` = `0` (fix)
   - `accum_thb_gross` / `remaining_amt` → `NULL` (ไว้คำนวณ offset ทีหลัง)
@@ -114,8 +117,10 @@ BEGIN
                g.thb_gross,
                NULL,
                NULL,
-               -- selection_flag: customer-flagged and already due
-               CASE WHEN r.customer_flag = 1
+               -- selection_flag: credit (dc_flag = 'C') -> 2;
+               --                 otherwise customer-flagged and already due -> 1, else 0
+               CASE WHEN g.thb_gross < 0 THEN 2
+                    WHEN r.customer_flag = 1
                          AND TRY_CONVERT(DATE, r.net_due_date, 104) <= @calc_date
                     THEN 1 ELSE 0 END,
                0,              -- resitem_flag
