@@ -21,6 +21,9 @@
 - สร้าง temp table `#tbl_trn_mc_othercustomer_header` (schema เดียวกับ
   `dbo.trn_mc_othercustomer_header`) และ `#tbl_trn_mc_othercustomer_summary`
   (schema เดียวกับ `dbo.trn_mc_othercustomer_summary`)
+- สร้าง temp table `#tbl_trn_mc_othercustomer_detail` (schema เดียวกับ
+  `dbo.trn_mc_othercustomer_detail`, 16 field) + เพิ่ม 1 คอลัมน์ที่ table จริงไม่มี:
+  `seq INT NULL` — เตรียมไว้ก่อน ยังไม่มี step ใดใช้
 - STEP 1: call `usp_mc0403_get_raw_fbl5n` — ตัว stored นั้นเป็นคน insert ลง
   `#tbl_trx_mc_raw_fbl5n` เอง (ไม่ใช้ `INSERT INTO ... EXEC` ใน orchestrator แล้ว)
 - STEP 2: call `usp_mc0403_insert_othercustomer_header_temp` (ย้าย logic มาจาก
@@ -141,6 +144,31 @@ BEGIN
         offset_flag              INT            NOT NULL,
         create_date              DATETIME       NOT NULL,
         create_by                VARCHAR(30)    NOT NULL
+    );
+
+    -- temp table: same schema as dbo.trn_mc_othercustomer_detail + seq
+    IF OBJECT_ID('tempdb..#tbl_trn_mc_othercustomer_detail') IS NOT NULL
+        DROP TABLE #tbl_trn_mc_othercustomer_detail;
+
+    CREATE TABLE #tbl_trn_mc_othercustomer_detail (
+        process_key      VARCHAR(40)    NOT NULL,
+        process_code     NVARCHAR(5)    NOT NULL,
+        calculate_date   DATE           NOT NULL,
+        cust_cd          VARCHAR(50)    NOT NULL,
+        document_no      NVARCHAR(20)   NOT NULL,
+        reference_no     NVARCHAR(20)   NOT NULL,
+        dc_flag          VARCHAR(1)     NOT NULL,
+        total_credit_amt DECIMAL(18, 2) NULL,
+        net_due_date     NVARCHAR(20)   NULL,
+        thb_gross        DECIMAL(18, 2) NULL,
+        accum_thb_gross  DECIMAL(18, 2) NULL,
+        remaining_amt    DECIMAL(18, 2) NULL,
+        selection_flag   INT            NULL,
+        resitem_flag     INT            NULL,
+        create_date      DATETIME       NOT NULL,
+        create_by        VARCHAR(30)    NOT NULL,
+        -- extra column (not in dbo.trn_mc_othercustomer_detail)
+        seq              INT            NULL
     );
 
     BEGIN TRY
