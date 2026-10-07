@@ -21,10 +21,15 @@
   where `process_code = 'BP01'` / `step_code = 'BP0107'` / `config_code = 'COMPANY_CODE'`
   (อ่านใส่ตัวแปรครั้งเดียวก่อน select; ไม่เจอ config → `NULL`)
 - column ที่ 6–8 เป็นค่า fix: `currency = 'THB'`, `standard_ois = 'YES'`, `additional_selection = 1`
-- column ที่ 9 เป็น `calculate_date` แปลงเป็น `NVARCHAR(8)` style 112 (`YYYYMMDD`)
-- column ที่ 10 เป็น `cust_cd AS customer_cd`
-- column ที่ 11 เป็น `customer_flag` ตาม `@step_code`: `'MC0404'` → `1`, `'MC0405'` → `0`, อื่น ๆ → `NULL`
-- column ที่ 12 เป็น `offset_flag` fix `1`
+- column ที่ 9 เป็น `document_number_credit` = `predefine_key` จาก `dbo.cfg_predefine_det`
+  where `predefine_cd = 2003` เอามาต่อกันคั่นด้วย `|` (ปัจจุบัน `'DA|DG|DZ'`)
+- column ที่ 10 เป็น `document_number_debit` = `predefine_key` จาก `dbo.cfg_predefine_det`
+  where `predefine_cd = 2002` เอามาต่อกันคั่นด้วย `|` (ปัจจุบัน `'DB|DR|RV'`)
+  (ทั้งสองค่าอ่านใส่ตัวแปรครั้งเดียวก่อน select เรียงตาม `predefine_key`; ไม่เจอ → `NULL`)
+- column ที่ 11 เป็น `calculate_date` แปลงเป็น `NVARCHAR(8)` style 112 (`YYYYMMDD`)
+- column ที่ 12 เป็น `cust_cd AS customer_cd`
+- column ที่ 13 เป็น `customer_flag` ตาม `@step_code`: `'MC0404'` → `1`, `'MC0405'` → `0`, อื่น ๆ → `NULL`
+- column ที่ 14 เป็น `offset_flag` fix `1`
 - `@update_by` ยังไม่ได้ใช้
 
 ## Script
@@ -50,6 +55,18 @@ BEGIN
       AND c.step_code    = N'BP0107'
       AND c.config_code  = N'COMPANY_CODE';
 
+    -- document types joined with '|' e.g. 'DB|DR|RV'
+    DECLARE @document_number_credit NVARCHAR(4000),
+            @document_number_debit  NVARCHAR(4000);
+
+    SELECT @document_number_credit = STRING_AGG(d.predefine_key, '|') WITHIN GROUP (ORDER BY d.predefine_key)
+    FROM dbo.cfg_predefine_det d
+    WHERE d.predefine_cd = 2003;
+
+    SELECT @document_number_debit = STRING_AGG(d.predefine_key, '|') WITHIN GROUP (ORDER BY d.predefine_key)
+    FROM dbo.cfg_predefine_det d
+    WHERE d.predefine_cd = 2002;
+
     SELECT @step_code AS step_code,
            h.cust_cd AS account,
            CONVERT(NVARCHAR(10), h.calculate_date, 104) AS clearing_date,    -- DD.MM.YYYY
@@ -58,6 +75,8 @@ BEGIN
            'THB' AS currency,
            'YES' AS standard_ois,
            1     AS additional_selection,
+           @document_number_credit AS document_number_credit,
+           @document_number_debit  AS document_number_debit,
            CONVERT(NVARCHAR(8), h.calculate_date, 112) AS calculate_date,   -- YYYYMMDD
            h.cust_cd AS customer_cd,
            CASE @step_code

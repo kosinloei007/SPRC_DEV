@@ -17,8 +17,9 @@
   `dbo.trn_mc_othercustomer_summary`
 - ใช้ temp table `#tbl_trn_mc_othercustomer_summary` ที่ orchestrator
   `usp_mc0403_get_othercustomer_not_clear` สร้างไว้ ถ้าไม่มี (เรียกเดี่ยว ๆ) → `RAISERROR` แล้วจบ
-- ก่อน insert → `DELETE` ข้อมูลเดิมใน `dbo.trn_mc_othercustomer_summary` ของ
-  `@process_key` / `@process_code` (รันซ้ำได้ ไม่ชน PK)
+- `DELETE` ข้อมูลเดิมใน `dbo.trn_mc_othercustomer_summary` ของ
+  `@process_key` / `@process_code` ก่อน insert ถูก comment ออกแล้ว
+  (รันซ้ำด้วย key เดิมอาจชน PK)
 - insert ครบทุกคอลัมน์ (schema temp table ตรงกับ table จริง)
 
 ## Script
@@ -43,9 +44,9 @@ BEGIN
     END
 
     -- re-run safe: clear this key's rows before inserting
-    DELETE FROM dbo.trn_mc_othercustomer_summary
-    WHERE process_key  = @process_key
-      AND process_code = @process_code;
+    -- DELETE FROM dbo.trn_mc_othercustomer_summary
+    -- WHERE process_key  = @process_key
+    --   AND process_code = @process_code;
 
     INSERT INTO dbo.trn_mc_othercustomer_summary (
         process_key, process_code, calculate_date, cust_cd, cust_name,

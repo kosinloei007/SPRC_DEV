@@ -19,9 +19,8 @@
   โดยมีเงื่อนไขเป็น `process_key` / `process_code` / `calculate_date` / `cust_cd` (= `@customer_cd`)
   / `customer_flag` (= `@customer_flag`) / `offset_flag` (= `@offset_flag`)
 - `@calculate_date` รับเป็น `YYYYMMDD` แล้วแปลงเป็น `date` (style 112)
-- ก่อน insert → `DELETE` ข้อมูลเดิมใน `dbo.trn_mc_othercustomer_detail` ของ key เดียวกัน (รันซ้ำได้ ไม่ชน PK)
-  และ `customer_flag = @customer_flag` / `offset_flag = @offset_flag` — detail ไม่มี 2 คอลัมน์นี้ จึงเช็คผ่าน
-  `EXISTS` กับ `trx_mc_raw_othercustomer` (join ด้วย key + `document_no`)
+- `DELETE` ข้อมูลเดิมใน `dbo.trn_mc_othercustomer_detail` ของ key เดียวกันก่อน insert
+  ถูก comment ออกแล้ว (รันซ้ำด้วย key เดิมอาจชน PK)
 - mapping:
   - `reference_no` = `r.reference` (ต่อจาก `document_no`); ถ้า `NULL` → `''` (คอลัมน์เป็น NOT NULL)
   - `thb_gross` ใน raw เป็นข้อความรูปแบบ SAP (`40,091.92-`) → ตัด `,` แล้วย้าย `-` ท้ายมาไว้ข้างหน้า → `DECIMAL(18,2)`
@@ -39,7 +38,7 @@
   - `accum_thb_gross` / `remaining_amt` → `NULL` (ไว้คำนวณ offset ทีหลัง)
   - `create_date` = `GETDATE()`, `create_by` = `@update_by`
 - เพิ่ม `SET XACT_ABORT ON` + `BEGIN TRY / BEGIN CATCH`
-- `DELETE` + `INSERT` อยู่ใน transaction เดียวกัน (`BEGIN TRANSACTION` / `COMMIT TRANSACTION`)
+- `INSERT` อยู่ใน transaction (`BEGIN TRANSACTION` / `COMMIT TRANSACTION`)
 - ถ้าเกิด error (รวมถึง `@calculate_date` แปลงเป็น date ไม่ได้) → `ROLLBACK TRANSACTION`
   (ถ้ามี transaction เปิดอยู่) แล้ว `RAISERROR` ส่ง error message / severity / state เดิมกลับไปให้ผู้เรียก
 - หลัง `COMMIT` → คืน result set จาก `dbo.trn_mc_othercustomer_detail` ตามเงื่อนไข parameter
@@ -78,23 +77,23 @@ BEGIN
 
         -- re-run safe: clear this key's rows before inserting
         -- detail has no customer_flag: match it via the raw rows
-        DELETE d
-        FROM dbo.trn_mc_othercustomer_detail d
-        WHERE d.process_key    = @process_key
-          AND d.process_code   = @process_code
-          AND d.calculate_date = @calc_date
-          AND d.cust_cd        = @customer_cd
-          AND EXISTS (
-                SELECT 1
-                FROM dbo.trx_mc_raw_othercustomer r
-                WHERE r.process_key    = d.process_key
-                  AND r.process_code   = d.process_code
-                  AND r.calculate_date = d.calculate_date
-                  AND r.cust_cd        = d.cust_cd
-                  AND r.document_no    = d.document_no
-                  AND r.customer_flag  = @customer_flag
-                  AND r.offset_flag    = @offset_flag
-          );
+        -- DELETE d
+        -- FROM dbo.trn_mc_othercustomer_detail d
+        -- WHERE d.process_key    = @process_key
+        --   AND d.process_code   = @process_code
+        --   AND d.calculate_date = @calc_date
+        --   AND d.cust_cd        = @customer_cd
+        --   AND EXISTS (
+        --         SELECT 1
+        --         FROM dbo.trx_mc_raw_othercustomer r
+        --         WHERE r.process_key    = d.process_key
+        --           AND r.process_code   = d.process_code
+        --           AND r.calculate_date = d.calculate_date
+        --           AND r.cust_cd        = d.cust_cd
+        --           AND r.document_no    = d.document_no
+        --           AND r.customer_flag  = @customer_flag
+        --           AND r.offset_flag    = @offset_flag
+        --   );
 
         INSERT INTO dbo.trn_mc_othercustomer_detail (
             process_key, process_code, calculate_date, cust_cd, document_no,

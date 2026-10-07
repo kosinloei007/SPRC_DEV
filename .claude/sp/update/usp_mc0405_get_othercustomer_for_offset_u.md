@@ -19,10 +19,8 @@
   (`usp_mc0403_get_othercustomer_not_clear`) สร้างไว้ เป็นที่พักข้อมูลและคำนวณ offset
 - หลังคำนวณเสร็จ → insert ข้อมูลจาก `#tbl_trn_mc_othercustomer_detail` ลง table จริง
   `dbo.trn_mc_othercustomer_detail` (16 field; ไม่เอา `seq` เพราะ table จริงไม่มี)
-  - ก่อน insert → `DELETE` ข้อมูลเดิมใน table จริงของ key เดียวกัน
-    (`process_key` / `process_code` / `calculate_date` / `cust_cd`) ที่ `customer_flag` /
-    `offset_flag` ตรงกับ parameter (เช็คผ่าน `EXISTS` กับ `trx_mc_raw_othercustomer`
-    ด้วย key + `document_no`) — รันซ้ำได้ ไม่ชน PK
+  - `DELETE` ข้อมูลเดิมใน table จริงของ key เดียวกันก่อน insert ถูก comment ออกแล้ว
+    (รันซ้ำด้วย key เดิมอาจชน PK)
 - ถ้าไม่มี temp table (เรียกเดี่ยว ๆ) → `RAISERROR` แล้วจบ
 - select ข้อมูลจาก `dbo.trx_mc_raw_othercustomer` ไป insert ลง `#tbl_trn_mc_othercustomer_detail`
   โดยมีเงื่อนไขเป็น `process_key` / `process_code` / `calculate_date` / `cust_cd` (= `@customer_cd`)
@@ -204,23 +202,23 @@ BEGIN
         -- persist: #tbl_trn_mc_othercustomer_detail -> dbo.trn_mc_othercustomer_detail
         -- re-run safe: clear this key's rows before inserting
         -- detail has no customer_flag: match it via the raw rows
-        DELETE d
-        FROM dbo.trn_mc_othercustomer_detail d
-        WHERE d.process_key    = @process_key
-          AND d.process_code   = @process_code
-          AND d.calculate_date = @calc_date
-          AND d.cust_cd        = @customer_cd
-          AND EXISTS (
-                SELECT 1
-                FROM dbo.trx_mc_raw_othercustomer r
-                WHERE r.process_key    = d.process_key
-                  AND r.process_code   = d.process_code
-                  AND r.calculate_date = d.calculate_date
-                  AND r.cust_cd        = d.cust_cd
-                  AND r.document_no    = d.document_no
-                  AND r.customer_flag  = @customer_flag
-                  AND r.offset_flag    = @offset_flag
-          );
+        -- DELETE d
+        -- FROM dbo.trn_mc_othercustomer_detail d
+        -- WHERE d.process_key    = @process_key
+        --   AND d.process_code   = @process_code
+        --   AND d.calculate_date = @calc_date
+        --   AND d.cust_cd        = @customer_cd
+        --   AND EXISTS (
+        --         SELECT 1
+        --         FROM dbo.trx_mc_raw_othercustomer r
+        --         WHERE r.process_key    = d.process_key
+        --           AND r.process_code   = d.process_code
+        --           AND r.calculate_date = d.calculate_date
+        --           AND r.cust_cd        = d.cust_cd
+        --           AND r.document_no    = d.document_no
+        --           AND r.customer_flag  = @customer_flag
+        --           AND r.offset_flag    = @offset_flag
+        --   );
 
         -- seq is temp-only: not persisted
         INSERT INTO dbo.trn_mc_othercustomer_detail (
