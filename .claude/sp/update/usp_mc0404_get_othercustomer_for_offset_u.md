@@ -16,7 +16,7 @@
 
 - เพิ่ม parameter `@process_code NVARCHAR(5)`
 - select ข้อมูลจาก `dbo.trx_mc_raw_othercustomer` ไป insert ลง `dbo.trn_mc_othercustomer_detail`
-  โดยมีเงื่อนไขเป็น `process_key` / `process_code` / `calculate_date` / `cust_cd` (= `@customer_cd`)
+  โดยมีเงื่อนไขเป็น `process_key` / `process_code` / `calculate_date` / `customer_cd` (= `@customer_cd`)
   / `customer_flag` (= `@customer_flag`) / `offset_flag` (= `@offset_flag`)
 - `@calculate_date` รับเป็น `YYYYMMDD` แล้วแปลงเป็น `date` (style 112)
 - `DELETE` ข้อมูลเดิมใน `dbo.trn_mc_othercustomer_detail` ของ key เดียวกันก่อน insert
@@ -27,7 +27,7 @@
   - `dc_flag` = `'C'` ถ้า `thb_gross` ติดลบ ไม่งั้น `'D'`
   - `net_due_date` ลงตามเดิม
   - `total_credit_amt` = `SUM(thb_gross)` ของแถวที่ `dc_flag = 'C'` group by key
-    (`process_key` / `process_code` / `calculate_date` / `cust_cd`) ใส่ทุกแถวของ key นั้น
+    (`process_key` / `process_code` / `calculate_date` / `customer_cd`) ใส่ทุกแถวของ key นั้น
     (ใช้ `SUM() OVER (PARTITION BY ...)`; ค่าเป็นลบตาม `thb_gross`, ไม่มี credit → `0`)
   - `selection_flag`:
     - `dc_flag = 'C'` → `2`
@@ -89,7 +89,7 @@ BEGIN
         --         WHERE r.process_key    = d.process_key
         --           AND r.process_code   = d.process_code
         --           AND r.calculate_date = d.calculate_date
-        --           AND r.cust_cd        = d.cust_cd
+        --           AND r.customer_cd    = d.cust_cd
         --           AND r.document_no    = d.document_no
         --           AND r.customer_flag  = @customer_flag
         --           AND r.offset_flag    = @offset_flag
@@ -104,14 +104,14 @@ BEGIN
         SELECT r.process_key,
                r.process_code,
                r.calculate_date,
-               r.cust_cd,
+               r.customer_cd,
                r.document_no,
                ISNULL(r.reference, ''),   -- reference_no is NOT NULL
                CASE WHEN g.thb_gross < 0 THEN 'C' ELSE 'D' END,
                -- sum of credit (dc_flag = 'C') thb_gross per key
                SUM(CASE WHEN g.thb_gross < 0 THEN g.thb_gross ELSE 0 END)
                    OVER (PARTITION BY r.process_key, r.process_code,
-                                      r.calculate_date, r.cust_cd),
+                                      r.calculate_date, r.customer_cd),
                r.net_due_date,
                g.thb_gross,
                NULL,
@@ -138,7 +138,7 @@ BEGIN
         WHERE r.process_key    = @process_key
           AND r.process_code   = @process_code
           AND r.calculate_date = @calc_date
-          AND r.cust_cd        = @customer_cd
+          AND r.customer_cd    = @customer_cd
           AND r.customer_flag  = @customer_flag
           AND r.offset_flag    = @offset_flag;
 
