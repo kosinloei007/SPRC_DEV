@@ -36,25 +36,24 @@ Requirement ปัจจุบัน (ถอดจาก stored เดิมใ�
      - `pay_status_cd = 3` (Cancel) หรือ
      - `pay_status_cd = 1` และ ( (`sap_status_cd = 1` และ `gen_zgenfip_status_cd = 1` และ `match_clear_status_cd` ไม่ว่าง)
        หรือ `sap_status_cd = 3` (Reverse Posting SAP) )
-   - 2.5 temp table สำหรับ history ของ Match & Clear — ทุกแถวของตารางต้นทางที่ `create_date < @CalculateDate` (schema ตามตารางต้นทาง) และเพิ่ม 2 คอลัมน์ท้าย: `backup_date` = `@CalculateDate`, `backup_by` = `@updated_by`
-     - `#tmp_trx_mc_raw_match_and_clear_history` ← `trx_mc_raw_match_and_clear`
-     - `#tmp_trn_mc_header_history` ← `trn_mc_header`
-     - `#tmp_trn_mc_detail_history` ← `trn_mc_detail`
-     - `#tmp_trn_mc_othercustomer_header_history` ← `trn_mc_othercustomer_header`
-     - `#tmp_trn_mc_othercustomer_detail_history` ← `trn_mc_othercustomer_detail`
-     - `#tmp_trx_mc_raw_othercustomer_history` ← `trx_mc_raw_othercustomer`
 3. **ย้ายเข้า history และลบ working ใน transaction เดียว** (ส่ง `@CalculateDate` ให้ทุกตัว; proc ลูกใช้ temp table จากข้อ 2)
    - `usp_bp0202_pending_billpayment_move_history_temp`
    - `usp_bp0202_pending_billpayment_move_history_staging`
    - `usp_bp0202_pending_billpayment_move_history_final`
    - `usp_bp0202_pending_billpayment_move_history_zgenfip`
-   - insert temp table ข้อ 2.5 ทั้ง 6 ตัวเข้าตาราง history ที่ชื่อเดียวกัน (`#tmp_<table>_history` → `<table>_history`) ระบุชื่อคอลัมน์ครบทุกตัว รวม `backup_date`, `backup_by`
+   - insert history ของ Match & Clear **จากตารางต้นทางโดยตรง (ไม่ผ่าน temp table)** — ทุกแถวที่ `create_date < @CalculateDate` ระบุชื่อคอลัมน์ครบทุกตัว และเพิ่ม `backup_date` = `@CalculateDate`, `backup_by` = `@updated_by`
+     - `trx_mc_raw_match_and_clear` → `trx_mc_raw_match_and_clear_history`
+     - `trn_mc_header` → `trn_mc_header_history`
+     - `trn_mc_detail` → `trn_mc_detail_history`
+     - `trn_mc_othercustomer_header` → `trn_mc_othercustomer_header_history`
+     - `trn_mc_othercustomer_detail` → `trn_mc_othercustomer_detail_history`
+     - `trx_mc_raw_othercustomer` → `trx_mc_raw_othercustomer_history`
    - `usp_bp0202_pending_billpayment_delete_working_all`
-   - ลบข้อมูลต้นทางของข้อ 2.5 ทั้ง 6 ตาราง ด้วยเงื่อนไขเดียวกับตอนเตรียม temp table (`create_date < @CalculateDate`)
+   - ลบข้อมูลต้นทางของ Match & Clear ทั้ง 6 ตาราง ด้วยเงื่อนไขเดียวกับตอน insert history (`create_date < @CalculateDate`)
    - `COMMIT` เมื่อสำเร็จ
-4. **Error handling** — `CATCH`: `ROLLBACK` ถ้ามี transaction ค้าง, drop temp table ทั้ง 10 ตัว แล้ว `RAISERROR` ข้อความเดิมออกไป
+4. **Error handling** — `CATCH`: `ROLLBACK` ถ้ามี transaction ค้าง, drop temp table ทั้ง 4 ตัว แล้ว `RAISERROR` ข้อความเดิมออกไป
 
-หมายเหตุ: `@updated_by` ใช้เป็นค่า `backup_by` ในข้อ 2.5; อีก 3 ตัว (`@process_code`, `@step_code`, `@process_key`) รับเข้ามาแต่ **ไม่ได้ถูกใช้** ใน body
+หมายเหตุ: `@updated_by` ใช้เป็นค่า `backup_by` ของ history Match & Clear; อีก 3 ตัว (`@process_code`, `@step_code`, `@process_key`) รับเข้ามาแต่ **ไม่ได้ถูกใช้** ใน body
 
 ## Script
 
@@ -78,12 +77,6 @@ BEGIN
 	IF OBJECT_ID('tempdb..#tmpBillPaymentFinal') IS NOT NULL DROP TABLE #tmpBillPaymentFinal
 	IF OBJECT_ID('tempdb..#tmpAllBillPaymentFinal') IS NOT NULL DROP TABLE #tmpAllBillPaymentFinal
 	IF OBJECT_ID('tempdb..#tmpZgenfipFinal') IS NOT NULL DROP TABLE #tmpZgenfipFinal
-	IF OBJECT_ID('tempdb..#tmp_trx_mc_raw_match_and_clear_history') IS NOT NULL DROP TABLE #tmp_trx_mc_raw_match_and_clear_history
-	IF OBJECT_ID('tempdb..#tmp_trn_mc_header_history') IS NOT NULL DROP TABLE #tmp_trn_mc_header_history
-	IF OBJECT_ID('tempdb..#tmp_trn_mc_detail_history') IS NOT NULL DROP TABLE #tmp_trn_mc_detail_history
-	IF OBJECT_ID('tempdb..#tmp_trn_mc_othercustomer_header_history') IS NOT NULL DROP TABLE #tmp_trn_mc_othercustomer_header_history
-	IF OBJECT_ID('tempdb..#tmp_trn_mc_othercustomer_detail_history') IS NOT NULL DROP TABLE #tmp_trn_mc_othercustomer_detail_history
-	IF OBJECT_ID('tempdb..#tmp_trx_mc_raw_othercustomer_history') IS NOT NULL DROP TABLE #tmp_trx_mc_raw_othercustomer_history
 
 	DECLARE @ErrorMessage VARCHAR(4000)
 			,@ErrorSeverity INT
@@ -195,50 +188,6 @@ BEGIN
 			)
 		----------End: 1.4 All BillPayment Final------
 
-		----------Start: 1.5 Prepare Match & Clear history temp tables--------
-		SELECT *
-			,@CalculateDate AS backup_date
-			,@updated_by AS backup_by
-		INTO #tmp_trx_mc_raw_match_and_clear_history 
-		FROM trx_mc_raw_match_and_clear
-		WHERE create_date < @CalculateDate
-
-		SELECT *
-			,@CalculateDate AS backup_date
-			,@updated_by AS backup_by
-		INTO #tmp_trn_mc_header_history 
-		FROM trn_mc_header
-		WHERE create_date < @CalculateDate
-
-		SELECT *
-			,@CalculateDate AS backup_date
-			,@updated_by AS backup_by
-		INTO #tmp_trn_mc_detail_history 
-		FROM trn_mc_detail
-		WHERE create_date < @CalculateDate
-
-		SELECT *
-			,@CalculateDate AS backup_date
-			,@updated_by AS backup_by
-		INTO #tmp_trn_mc_othercustomer_header_history 
-		FROM trn_mc_othercustomer_header
-		WHERE create_date < @CalculateDate
-
-		SELECT *
-			,@CalculateDate AS backup_date
-			,@updated_by AS backup_by
-		INTO #tmp_trn_mc_othercustomer_detail_history 
-		FROM trn_mc_othercustomer_detail
-		WHERE create_date < @CalculateDate
-
-		SELECT *
-			,@CalculateDate AS backup_date
-			,@updated_by AS backup_by
-		INTO #tmp_trx_mc_raw_othercustomer_history 
-		FROM trx_mc_raw_othercustomer
-		WHERE create_date < @CalculateDate
-		----------End: 1.5 Prepare Match & Clear history temp tables--------
-
 		--End: 1. Prepare Data for move to History---------------------------------------------------------
 
 
@@ -301,9 +250,10 @@ BEGIN
 				,invoice_ref
 				,payment_block
 				,thb_gross
-				,backup_date
-				,backup_by
-			FROM #tmp_trx_mc_raw_match_and_clear_history
+				,@CalculateDate AS backup_date
+				,@updated_by AS backup_by
+			FROM trx_mc_raw_match_and_clear
+			WHERE create_date < @CalculateDate
 
 		INSERT INTO trn_mc_header_history
 			(
@@ -341,9 +291,10 @@ BEGIN
 				,create_by
 				,update_date
 				,update_by
-				,backup_date
-				,backup_by
-			FROM #tmp_trn_mc_header_history
+				,@CalculateDate AS backup_date
+				,@updated_by AS backup_by
+			FROM trn_mc_header
+			WHERE create_date < @CalculateDate
 
 		INSERT INTO trn_mc_detail_history
 			(
@@ -377,9 +328,10 @@ BEGIN
 				,resitem_flag
 				,create_date
 				,create_by
-				,backup_date
-				,backup_by
-			FROM #tmp_trn_mc_detail_history
+				,@CalculateDate AS backup_date
+				,@updated_by AS backup_by
+			FROM trn_mc_detail
+			WHERE create_date < @CalculateDate
 
 		INSERT INTO trn_mc_othercustomer_header_history
 			(
@@ -421,9 +373,10 @@ BEGIN
 				,create_by
 				,update_date
 				,update_by
-				,backup_date
-				,backup_by
-			FROM #tmp_trn_mc_othercustomer_header_history
+				,@CalculateDate AS backup_date
+				,@updated_by AS backup_by
+			FROM trn_mc_othercustomer_header
+			WHERE create_date < @CalculateDate
 
 		INSERT INTO trn_mc_othercustomer_detail_history
 			(
@@ -463,9 +416,10 @@ BEGIN
 				,resitem_flag
 				,create_date
 				,create_by
-				,backup_date
-				,backup_by
-			FROM #tmp_trn_mc_othercustomer_detail_history
+				,@CalculateDate AS backup_date
+				,@updated_by AS backup_by
+			FROM trn_mc_othercustomer_detail
+			WHERE create_date < @CalculateDate
 
 		INSERT INTO trx_mc_raw_othercustomer_history
 			(
@@ -513,9 +467,10 @@ BEGIN
 				,thb_gross
 				,create_by
 				,create_date
-				,backup_date
-				,backup_by
-			FROM #tmp_trx_mc_raw_othercustomer_history
+				,@CalculateDate AS backup_date
+				,@updated_by AS backup_by
+			FROM trx_mc_raw_othercustomer
+			WHERE create_date < @CalculateDate
 		---------End: 2.2.1 Insert Match & Clear History-------------
 		---------End: 2.2 Insert History-------------
 	
@@ -573,12 +528,6 @@ BEGIN
 		IF OBJECT_ID('tempdb..#tmpAllBillPaymentFinal') IS NOT NULL DROP TABLE #tmpAllBillPaymentFinal
 		IF OBJECT_ID('tempdb..#tmpBillPaymentFinal') IS NOT NULL DROP TABLE #tmpBillPaymentFinal
 		IF OBJECT_ID('tempdb..#tmpZgenfipFinal') IS NOT NULL DROP TABLE #tmpZgenfipFinal
-		IF OBJECT_ID('tempdb..#tmp_trx_mc_raw_match_and_clear_history') IS NOT NULL DROP TABLE #tmp_trx_mc_raw_match_and_clear_history
-		IF OBJECT_ID('tempdb..#tmp_trn_mc_header_history') IS NOT NULL DROP TABLE #tmp_trn_mc_header_history
-		IF OBJECT_ID('tempdb..#tmp_trn_mc_detail_history') IS NOT NULL DROP TABLE #tmp_trn_mc_detail_history
-		IF OBJECT_ID('tempdb..#tmp_trn_mc_othercustomer_header_history') IS NOT NULL DROP TABLE #tmp_trn_mc_othercustomer_header_history
-		IF OBJECT_ID('tempdb..#tmp_trn_mc_othercustomer_detail_history') IS NOT NULL DROP TABLE #tmp_trn_mc_othercustomer_detail_history
-		IF OBJECT_ID('tempdb..#tmp_trx_mc_raw_othercustomer_history') IS NOT NULL DROP TABLE #tmp_trx_mc_raw_othercustomer_history
 
 		RAISERROR(@ErrorMessage,@ErrorSeverity,@ErrorState);
 	END CATCH

@@ -22,8 +22,8 @@ Requirement ปัจจุบัน (ถอดจาก stored เดิมใ�
    `bp_zgenfip_final_history`, `trx_bp_raw_upload_file_result`, `trx_bp_raw_document_file_result`
 3. **ลบข้อมูล Match & Clear** (ใช้ `@DayMC`): `trx_mc_raw_match_and_clear`, `trx_raw_mas_customer_sales`,
    `trn_mc_detail`, `trn_mc_header`
-   - `trn_mc_othercustomer_header`, `trn_mc_othercustomer_detail`, `trx_mc_raw_othercustomer` — เขียน delete ไว้แล้วแต่ **comment ออกก่อน** (ยังไม่ลบ)
-   - ตาราง history ของ Match & Clear (ใช้ `@DayMC` เงื่อนไขเดียวกัน): `trx_mc_raw_match_and_clear_history`, `trn_mc_header_history`,
+   - `trn_mc_othercustomer_header`, `trn_mc_othercustomer_detail`, `trx_mc_raw_othercustomer` — **ไม่ลบ** ใน proc นี้ (เอา delete ที่ comment ไว้ออกแล้ว)
+   - ตาราง history ของ Match & Clear (ใช้ `@DayMC` จุดตัดเดียวกัน แต่เทียบกับ `backup_date` แทน `create_date`): `trx_mc_raw_match_and_clear_history`, `trn_mc_header_history`,
      `trn_mc_detail_history`, `trn_mc_othercustomer_header_history`, `trn_mc_othercustomer_detail_history`,
      `trx_mc_raw_othercustomer_history`
 4. ทั้งหมดอยู่ใน transaction เดียว — `COMMIT` เมื่อสำเร็จ; `CATCH`: `ROLLBACK` แล้ว `RAISERROR` ข้อความเดิมออกไป
@@ -88,32 +88,23 @@ BEGIN
 		DELETE
 		FROM [trn_mc_header] WHERE create_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
 
-		--DELETE
-		--FROM [trn_mc_othercustomer_header] WHERE create_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
-
-		--DELETE
-		--FROM [trn_mc_othercustomer_detail] WHERE create_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
-
-		--DELETE
-		--FROM [trx_mc_raw_othercustomer] WHERE create_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
+		DELETE
+		FROM [trx_mc_raw_match_and_clear_history] WHERE backup_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
 
 		DELETE
-		FROM [trx_mc_raw_match_and_clear_history] WHERE create_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
+		FROM [trn_mc_header_history] WHERE backup_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
 
 		DELETE
-		FROM [trn_mc_header_history] WHERE create_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
+		FROM [trn_mc_detail_history] WHERE backup_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
 
 		DELETE
-		FROM [trn_mc_detail_history] WHERE create_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
+		FROM [trn_mc_othercustomer_header_history] WHERE backup_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
 
 		DELETE
-		FROM [trn_mc_othercustomer_header_history] WHERE create_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
+		FROM [trn_mc_othercustomer_detail_history] WHERE backup_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
 
 		DELETE
-		FROM [trn_mc_othercustomer_detail_history] WHERE create_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
-
-		DELETE
-		FROM [trx_mc_raw_othercustomer_history] WHERE create_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
+		FROM [trx_mc_raw_othercustomer_history] WHERE backup_date <= CAST(DATEADD(day,@DayMC,@CalculateDate) AS DATE)
 		 --#End - Delete Match and Clear Data
 
 		IF @@TRANCOUNT > 0
